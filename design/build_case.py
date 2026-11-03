@@ -72,7 +72,10 @@ STAIR_CLR      = 0.0    # 階段部の追加クリアランス（試作結果で
 # --- パドル（エクストラスイッチ）まわり ---
 PADDLE_NOTCH_Z0 = PLATE_BOT + 0.1   # フレーム背面壁のパドル通しノッチ下端 z（これより上をポケット幅で開ける）
 TACT_WIN_X0     = 98.0  # ボトム側タクト逃げ窓の x 開始（背面側）: 基板裏面タクトのボタン逃げ
-TACT_WIN_MARGIN = 3.5   # 窓の y 方向マージン（ポケット範囲に対して）
+TACT_WIN_MARGIN = 0.0   # 窓の y 方向マージン（ポケット範囲に対して）。
+                        # 旧値 3.5 では隣り合う窓がポケット間の「歯」の壁を両側から
+                        # 切断し、背面壁の帯が別ソリッドとして切り離されたため 0 にした
+                        # （窓はポケットの y 範囲ちょうど。実物で当たりを確認すること）
 
 # --- 開口（推定位置・要実物確認） ---
 USB_XC   = 97.0         # USB開口中心 x（マイコン帯域 85..110 の中央付近）
@@ -91,7 +94,9 @@ GLOW_Z0     = FLOOR_T + 0.2   # 帯の下端 z = 2.8（床上面の少し上）
 GLOW_Z1     = FLOOR_T + 1.8   # 帯の上端 z = 4.4（基板支持レッジ下端 4.5 の少し下）
 
 # --- 基板深部のFR4穴用「吊りボス」（スイッチプレート裏面に一体化） ---
-HANG_BOT  = PCB_TOP + 0.05   # 6.80: 基板表面すれすれ（基板に穴があればネジが通る）
+HANG_BOT  = PCB_TOP + 0.05   # 7.35: 基板表面すれすれ（基板に穴があればネジが通る）
+HANG_OVERLAP = 0.5           # 吊りボス上端をプレートスラブへ食い込ませる量
+                             # （面接触のみだと融合せず別ソリッドになるため）
 HANG_DIA  = {"big": 7.0, "small": 5.5}
 HANG_TAP_DEPTH = 3.3         # ネジは M3x10 / M2x10 想定（キットの x12 は長すぎる）
 MCU_ZONE = {  # マイコン実装域（吊りボス禁止）: 外側角・背面寄り
@@ -108,6 +113,30 @@ BOSS_TOP_IN_PLATE  = PLATE_BOT - 0.05     # プレート帯域内ボスの天端
 BOSS_TOP_FULL      = PLATE_TOP + 1.85     # プレート外ボスの天端
 PIN_CLEAR = 0.15        # 位置決めピンの穴径に対する直径差
 PIN_TOP   = FR4_RECESS_Z + FR4_T + 1.3    # 位置決めピン天端 z=3.8（基板裏面・裏面LED想定より下）
+PIN_EMBED = 0.3         # ピン下端をFR4凹みの床へ食い込ませる量（面接触のみだと別ソリッド化するため）
+LEDGE_EMBED = 0.3       # 基板支持レッジ外周をボトム壁へ食い込ませる量（同上）
+
+# --- フレーム側ボスの接合アーム ---
+# ボス柱の中心からフレーム本体材料（内腔 ch の外側）までの距離が柱半径より大きいと、
+# 柱が内腔の宙に浮いて別ソリッドになる。その場合、基板上面〜プレート下面の帯
+# （ソケット間のストリートを通る高さ）に、本体材料まで届く腕を追加して接合する。
+ARM_W       = 5.0                  # アーム幅（ストリート幅の目安以下）
+ARM_Z0      = PCB_TOP + 0.05       # 7.35
+ARM_Z1      = PLATE_BOT - 0.05     # 9.45（吊りボスでない通常ボスの天端と同じ）
+ARM_OVERLAP = 1.0                  # 柱と本体材料の重なりがこれ未満ならアームを出す
+ARM_INTO    = 1.5                  # アーム先端の本体材料への食い込み量
+
+# --- STL書き出しの正規化 ---
+DROP_VOL    = 10.0      # mm3: これ未満の独立ソリッドは書き出し時に除去する。
+                        # 設計上意図した別ソリッドは存在しない（位置決めピンはボトム
+                        # ケースに融合済み、吊りボスもプレートに融合）ため、この閾値
+                        # 未満の独立ソリッドは接線部の残骸か、試作クリップで切り
+                        # 離された断片として扱う
+FIN_EPS     = 0.15      # スイッチ穴がプレート外周にこれ未満の距離で接する場合、その穴の
+                        # 周囲この量を外形から除いて開口を外形の notch として取り込む
+                        # （外周との間に sub-mm のフィンが残ったり、穴壁と外周壁が接線
+                        # 接触すると STL が non-manifold になるため。実測の近接は
+                        # 0.002〜0.05 で、外周と平行なエッジも含む）
 
 # --- FR4プレート座標変換（★暫定・試作片で確定する） ---
 # case_x = plate_y + tx ; short: case_y = ty - plate_x（階段側が逆）, long: case_y = plate_x + ty
@@ -245,12 +274,15 @@ def classify_holes(half, plate_bnd0):
     - hang: 基板深部だが、スイッチ開口・マイコン域から離れている → スイッチ
       プレート裏面の吊りボス（基板に取付穴があればネジが通る。無ければ未使用で無害）。
       プレート外周が届かない位置では、プレートに丸い耳（ear）を出して吊る。
+    - ただし基板深部でも、フレーム本体（ベゼル）が既にある位置（内腔・ウェルの外）
+      の穴は boss 扱いにしてフレーム本体へ直接タップする（例: R1）。
     - pin : それ以外 → ボトムケースの位置決めピン（基板裏面には届かない高さ）。"""
     H = halves[half]
     pcb = H["pcb"]
     sw_polys = [Polygon(hp) for hp in H["holes"]]
     mx0, mx1, my0, my1 = MCU_ZONE[half]
     frame_zone = inset(H["outline"], WALL - 0.35)
+    frame_mat = H["outline"].difference(outset(plate_bnd0, PLATE_CLR))  # フレーム本体がある平面領域
     res = []
     for h in plate_holes[half]:
         pt = Point(h["x"], h["y"])
@@ -259,6 +291,10 @@ def classify_holes(half, plate_bnd0):
         entry = dict(h, ear=False)
         if (not inside) or d_edge <= 4.0:
             entry["kind"] = "boss"
+        elif pt.within(frame_mat):
+            # フレーム本体（ベゼル）が既にある位置: 柱も吊りボスも作らず、
+            # フレーム本体へ直接タップする（boss として処理する）
+            entry["kind"] = "boss"; entry["direct"] = True
         else:
             r = HANG_DIA[h["cls"]] / 2
             d_sw = min(pt.distance(sp) for sp in sw_polys)
@@ -274,7 +310,8 @@ def classify_holes(half, plate_bnd0):
                 entry["kind"] = "pin"
         res.append(entry)
         print(f"[{half}] {h['id']} ({h['x']:.1f},{h['y']:.1f}) {h['cls']} inside_pcb={inside} "
-              f"d_edge={d_edge:.1f} -> {entry['kind']}" + (" (ear)" if entry.get("ear") else ""))
+              f"d_edge={d_edge:.1f} -> {entry['kind']}" + (" (ear)" if entry.get("ear") else "")
+              + (" (frame-direct)" if entry.get("direct") else ""))
     return res
 
 def build_half(half):
@@ -299,13 +336,24 @@ def build_half(half):
     trrs_y = (outer_end_y - TRRS_OFFSET) if half == "short" else (outer_end_y + TRRS_OFFSET)
 
     # ---------- スイッチプレート（別体） ----------
-    plate = prism(plate_bnd, PLATE_BOT, PLATE_TOP)
+    # 外周に接する/近い穴（階段際のキー）は、穴周囲 FIN_EPS を外形から除いて
+    # 開口を外形の notch として取り込む（フィン・接線接触の防止）。
+    fin_holes = [Polygon(hp) for hp in H["holes"]
+                 if Polygon(hp).boundary.distance(plate_bnd.boundary) < FIN_EPS]
+    plate_bnd_p = plate_bnd
+    if fin_holes:
+        moat = unary_union([h.buffer(FIN_EPS) for h in fin_holes])
+        plate_bnd_p = shp(ring_pts(largest(plate_bnd.difference(moat))))
+        print(f"[{half}] plate fin-fix: {len(fin_holes)} hole(s) near outline, "
+              f"outline area {plate_bnd.area:.0f} -> {plate_bnd_p.area:.0f}")
+    plate = prism(plate_bnd_p, PLATE_BOT, PLATE_TOP)
     for hp in H["holes"]:
         plate = plate - prism_pts(hp, PLATE_BOT - 0.2, PLATE_TOP + 0.2)
-    # 吊りボス（プレート裏面に一体化, 基板深部のFR4穴用）
+    # 吊りボス（プレート裏面に一体化, 基板深部のFR4穴用。上端はスラブへ食い込ませて融合させる）
     for e in holes_cls:
         if e["kind"] == "hang":
-            plate = plate + cyl(e["x"], e["y"], HANG_BOT, HANG_DIA[e["cls"]], PLATE_BOT - HANG_BOT)
+            plate = plate + cyl(e["x"], e["y"], HANG_BOT, HANG_DIA[e["cls"]],
+                                PLATE_BOT - HANG_BOT + HANG_OVERLAP)
             plate = plate - cyl(e["x"], e["y"], HANG_BOT - 0.1, TAP_DIA[e["cls"]], HANG_TAP_DEPTH)
 
     # ---------- トップフレーム（枠） ----------
@@ -315,11 +363,29 @@ def build_half(half):
              - prism(ch, PCB_BOT - 0.1, PLATE_TOP)
              - prism(well, PLATE_TOP, FRAME_TOP + 0.1))
     # ボス（フレームから下向きに充填: チャネル帯域の材料 + タッピング穴）
+    from shapely.ops import nearest_points
+    mat_low = outline.difference(ch)   # フレーム本体材料（内腔の外側）の平面領域
     for e in holes_cls:
         if e["kind"] != "boss":
             continue
         top = BOSS_TOP_FULL if e["full"] else BOSS_TOP_IN_PLATE
         frame = frame + cyl(e["x"], e["y"], PCB_BOT, BOSS_DIA[e["cls"]], top - PCB_BOT)
+        # 接合アーム: 柱が本体材料に届いていない（重なり不足）場合は腕でつなぐ
+        pt_b = Point(e["x"], e["y"])
+        d_mat = pt_b.distance(mat_low)
+        if d_mat > BOSS_DIA[e["cls"]] / 2 - ARM_OVERLAP:
+            _, tp = nearest_points(pt_b, mat_low)
+            vx, vy = tp.x - e["x"], tp.y - e["y"]
+            L = math.hypot(vx, vy)
+            ux, uy = vx / L, vy / L
+            ex, ey = tp.x + ux * ARM_INTO, tp.y + uy * ARM_INTO
+            qx, qy = -uy, ux
+            w = min(ARM_W, BOSS_DIA[e["cls"]]) / 2
+            rect = [(e["x"] + qx * w, e["y"] + qy * w), (e["x"] - qx * w, e["y"] - qy * w),
+                    (ex - qx * w, ey - qy * w), (ex + qx * w, ey + qy * w)]
+            frame = frame + prism_pts(rect, ARM_Z0, ARM_Z1)
+            print(f"[{half}] {e['id']} boss arm: ({e['x']:.1f},{e['y']:.1f}) -> "
+                  f"({tp.x:.1f},{tp.y:.1f}) gap={d_mat:.1f}")
         depth = 7.0 if e["full"] else 5.0
         frame = frame - cyl(e["x"], e["y"], PCB_BOT - 0.1, TAP_DIA[e["cls"]], depth)
     # パドルノッチ（背面壁, ポケット位置で z=PADDLE_NOTCH_Z0..天面 を開ける）
@@ -340,8 +406,8 @@ def build_half(half):
         bottom = bottom - prism(inset(outline, GLOW_T), GLOW_Z0, GLOW_Z1)
     # FR4凹み
     bottom = bottom - prism(inset(outline, FR4_INSET), FR4_RECESS_Z, FLOOR_T + 0.01)
-    # 基板支持レッジ
-    ledge = prism(cavity, FLOOR_T + 1.9, PCB_BOT) - prism(inset(outline, LEDGE_INSET), FLOOR_T + 1.8, PCB_BOT + 0.1)
+    # 基板支持レッジ（外周はボトム壁へ食い込ませて融合させる）
+    ledge = prism(outset(cavity, LEDGE_EMBED), FLOOR_T + 1.9, PCB_BOT) - prism(inset(outline, LEDGE_INSET), FLOOR_T + 1.8, PCB_BOT + 0.1)
     bottom = bottom + ledge
     # タクト逃げ窓（背面・ポケット位置の床〜レッジを抜く）
     for (py0, py1) in H["pockets_y"]:
@@ -354,7 +420,8 @@ def build_half(half):
             bottom = bottom - cyl(e["x"], e["y"], -0.1, CB_DIA[e["cls"]], FR4_RECESS_Z + 0.05)
         elif e["kind"] == "pin":
             dia = (2.85 if e["cls"] == "big" else 1.75) - PIN_CLEAR
-            bottom = bottom + cyl(e["x"], e["y"], FR4_RECESS_Z, dia, PIN_TOP - FR4_RECESS_Z)
+            bottom = bottom + cyl(e["x"], e["y"], FR4_RECESS_Z - PIN_EMBED, dia,
+                                  PIN_TOP - FR4_RECESS_Z + PIN_EMBED)
     # ゴム足逃げ
     feet = [(e["x"], e["y"]) for e in holes_cls if e["kind"] in ("boss", "hang") and e["cls"] == "big"] + FEET_EXTRA[half]
     for (fx, fy) in feet:
@@ -362,10 +429,36 @@ def build_half(half):
 
     return dict(plate=plate, frame=frame, bottom=bottom)
 
+def fuse_solids(solids):
+    out = solids[0]
+    for s in solids[1:]:
+        out = out + s
+    return out
+
+def normalize(part, name):
+    """微小ソリッド（残骸）を除き、残りを融合して単一ソリッド化する。"""
+    solids = list(part.solids())
+    kept = []
+    for s in solids:
+        if s.volume >= DROP_VOL:
+            kept.append(s)
+        else:
+            print(f"  [normalize] {name}: micro solid removed (vol={s.volume:.2f} mm3)")
+    if not kept:
+        raise RuntimeError(f"{name}: no solid left after normalize")
+    return fuse_solids(kept)
+
 def export(part, name):
+    fused = normalize(part, name)
+    ns = len(fused.solids())
+    zmin = fused.bounding_box().min.Z
+    fused = fused.moved(bd.Location((0, 0, -zmin)))
     path = f"{OUTDIR}/{name}.stl"
-    bd.export_stl(part, path)
-    print("exported", path, "bbox", [round(v, 2) for v in bbox_of(part)])
+    bd.export_stl(fused, path)
+    bb = fused.bounding_box()
+    print(f"exported {path} solids={ns} vol={fused.volume:.0f} "
+          f"bbox x[{bb.min.X:.1f},{bb.max.X:.1f}] y[{bb.min.Y:.1f},{bb.max.Y:.1f}] "
+          f"z[{bb.min.Z:.2f},{bb.max.Z:.2f}]")
     return path
 
 def clip(part, xr, yr):
@@ -374,12 +467,32 @@ def clip(part, xr, yr):
     solids = []
     for s in res:
         solids.extend(s.solids() if hasattr(s, "solids") else [s])
+    solids = [s for s in solids if s.volume >= DROP_VOL]
     if not solids:
         raise RuntimeError("clip produced no solid")
-    out = solids[0]
-    for s in solids[1:]:
-        out = out + s
-    return out
+    return fuse_solids(solids)
+
+def trial_compose(pieces, xr, yr, name):
+    """積層試作片: 各パーツの切り出しを重ねて融合する。
+    面接触だけでは融合しない場合は、フレームを -0.05 / プレートを +0.05 に
+    ずらして体積的に重ねてから融合し直す（試作片の当たり確認には影響しない量）。
+    pieces: [(part, nudge_z), ...]"""
+    fused = None
+    for use_nudge in (False, True):
+        solids = []
+        for part, nz in pieces:
+            c = clip(part, xr, yr)
+            if use_nudge and nz:
+                c = c.moved(bd.Location((0, 0, nz)))
+            solids.extend(c.solids())
+        kept = [s for s in solids if s.volume >= DROP_VOL]
+        fused = fuse_solids(kept)
+        if len(fused.solids()) == 1:
+            if use_nudge:
+                print(f"  [trial] {name}: fused with z-nudge")
+            return fused
+    print(f"  [trial] {name}: WARNING still {len(fused.solids())} solids")
+    return fused
 
 results = {}
 for half in ("short", "long"):
@@ -394,9 +507,8 @@ for half in ("short", "long"):
 # 1) 階段境界（両半分）: 階段側 50mm 帯をフル積層で切り出し
 for half, yr in (("short", (-3, 50)), ("long", (127.2, 180.2))):
     P = results[half]
-    comp = (clip(P["bottom"], (-3, 117.3), yr)
-            + clip(P["plate"], (-3, 117.3), yr)
-            + clip(P["frame"], (-3, 117.3), yr))
+    comp = trial_compose([(P["bottom"], 0.0), (P["plate"], 0.05), (P["frame"], -0.05)],
+                         (-3, 117.3), yr, f"trial_stair_{half}")
     export(comp, f"trial_stair_{half}")
 
 # 2) ネジ穴ボス部: FR4穴のある帯を切り出し（実物プレートを重ねて変換を当てる）
@@ -409,8 +521,8 @@ export(clip(P["frame"], (-3, 78), (115, 180.2)), "trial_boss_frame_long")
 
 # 3) 背面-外側角（short）: パドルポケット×3 + タクト窓 + TRRS開口 + USB開口
 P = results["short"]
-comp = (clip(P["bottom"], (80, 117.3), (80, 146.4))
-        + clip(P["frame"], (80, 117.3), (80, 146.4)))
+comp = trial_compose([(P["bottom"], 0.0), (P["frame"], -0.05)],
+                     (80, 117.3), (80, 146.4), "trial_corner_short")
 export(comp, "trial_corner_short")
 
 print("DONE")
