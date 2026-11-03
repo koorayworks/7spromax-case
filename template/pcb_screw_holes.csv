@@ -1,0 +1,20 @@
+half,case_x_mm,case_y_mm,diameter_mm_est,confidence,support,nearest_fr4_hole,nearest_fr4_dist_mm
+long,9.08,110.36,3.7,high,"back +54.5, top +12.3",R10,42.4
+long,9.85,136.01,3.9,high,back +40.6,R2,31.9
+short,16.49,135.16,4.5,high,top +15.3; front/outer corner,L1,5.6
+short,29.03,129.78,4.1,medium,visual crop check,L9,17.7
+short,52.62,133.69,4.3,medium,top +9.7,L9,6.6
+short,29.22,105.26,3.9,medium,disk detection,L9,33.7
+long,14.68,3.31,4.1,medium,back +9.4; outer-end/front corner,R1,36.3
+long,25.71,109.74,4.8,low,possible merged blob,R10,29.5
+long,17.31,122.77,5.3,low,possible merged blob,R10,30.0
+long,26.34,135.08,5.0,low,possible merged blob,R10,20.2
+long,63.27,37.72,3.0,low,,R9,8.5
+long,92.11,157.17,2.8,low,,R3,19.0
+long,18.44,161.15,2.9,low,,R2,10.1
+short,21.71,37.63,1.7,low,,L2,11.7
+short,107.06,64.07,1.7,low,small back-band hole (tab/part related?),L5,30.0
+short,107.43,117.38,1.8,low,small back-band hole (tab/part related?),L3,22.7
+long,110.15,28.31,2.1,low,small back-band hole (tab/part related?),R5,25.5
+long,101.10,83.43,1.4,low,small back-band hole,R4,5.0
+long,107.23,83.58,1.9,low,small back-band hole,R4,6.4
