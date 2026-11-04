@@ -128,7 +128,7 @@ def main():
     ax.set_ylim(0, BED)
     ax.set_aspect("equal")
     ax.grid(alpha=0.25)
-    ax.set_title("trial_all_v22 layout (v2.3 pieces, v2.2 arrangement)")
+    ax.set_title("trial_all_v22 layout (v2.4 pieces, v2.2 arrangement)")
     fig.tight_layout()
     fig.savefig(f"{BASE}/guide_trial_all_v22.png", dpi=110)
     print("saved guide_trial_all_v22.png")

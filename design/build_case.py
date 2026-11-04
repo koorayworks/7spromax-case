@@ -1,6 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-7sProMax 3Dプリントケース 立体設計 v2.3
+7sProMax 3Dプリントケース 立体設計 v2.4
+
+v2.4 の要点（詳細は DESIGN_NOTES §17.13、根拠は DOCKING_STUDY 案2）:
+  - 左右ドッキング（一体型風連結）を実装した。磁石は入れない（本人
+    指示）。両半分の階段フェイスを、基板テッセレーション由来の1本の
+    共有シームカーブ上に再設計した: 踏面は基板レベル ±2.7（= キャビティ
+    0.5 + 壁 2.2）で統一し、蹴上は基板の共有境界 x（26.6/46.2/65.2/
+    84.4）に一致させた。ドッキング位置（隙間 0.30）では主階段の継ぎ目
+    隙間が均一 0.30mm、全体幅は約 301.1mm になる。
+  - 背面ラン（x>=84.4、段5+6 統合）は例外: long はフレームのウェル
+    制約のため現行（v2.3 量子化）フェイス 177.222 を残し、short は
+    段5の統一フェイス 21.76 を 2.0mm 延長した 19.76 に合わせてある。
+  - 変更は外形の階段帯のみ。キャビティ（outline3+0.5）・パドル・
+    開口・ネジ計画など v2.3 の成立条件は変えていない。
 
 v2.3 の要点（詳細は DESIGN_NOTES §17.12）:
   - 基板外形を pcb_outline3 に切り替えた。outline2 の階段帯はスキャンの
@@ -136,6 +149,12 @@ STAIR_DISK_R   = 3.25   # 階段帯の実測ソケット中心からキャビテ
                         # （ドーム半径 2.75 + クリアランス 0.5。v2.3 で輪郭は
                         # outline3（矩形ステップ再構成）になったため通常は
                         # 余裕があるが、保険として残す）
+# --- v2.4: 左右ドッキングのシーム整形（§17.13、DOCKING_STUDY 案2） ---
+SEAM_PROJ       = CAV_CLR + STAIR_WALL  # 2.7: 踏面の張り出し（基板→ケースフェイス）
+SEAM_BACK_EXT   = 2.0   # 背面ランで short 側フェイスを延長する量（long は現行維持）
+SEAM_STRIP_X    = (3.2, 113.7)  # シーム整形を効かせる x 範囲（outline3 の置換帯と同じ）
+SEAM_FILL_DEPTH = 12.0  # 整形フィル矩形が外形内側へ潜る深さ
+
 # --- v2.3: 階段壁厚の上限（§17.12、本人決定で三角形の厚い壁を除去） ---
 STAIR_WALL_CAP = True   # 階段帯の壁厚を STAIR_WALL 以下に制限する
 CAP_STRIP_EXTRA = 2.5   # キャップを効かせる帯 = 階段ラン列のセグメントを
@@ -438,6 +457,80 @@ def quantize_stair(outline, pcb, half, cav0=None):
     print(f"[{half}] stair quantized: worst face wall (excl. joints) = {worst_d:.3f}")
     return new_outline, report
 
+# ============================= v2.4: 階段フェイスのシーム整形 =============================
+import sys as _sys
+_sys.path.insert(0, f"{BASE}/template")
+from make_outline3 import STEPS as PCB_STEPS, XB as PCB_XB
+
+def seam_stair(outline_q, pcb, half):
+    """階段フェイスを左右共有のシームカーブ上に再設計する（§17.13、案2）。
+
+    入力は v2.3 の量子化済み外形（outline_q）。階段帯（x 3.2〜113.7）の
+    輪郭だけを、基板ステップ（pcb_outline3 の STEPS が正本）から作る
+    階段状プロファイルで置き換える:
+      - 踏面フェイス = 基板レベル ∓ SEAM_PROJ（2.7 = キャビティ 0.5 + 壁 2.2）
+      - 蹴上フェイス = 基板の共有境界 x（26.6/46.2/65.2/84.4、両半分で同一）
+    これにより、両半分を寄せたとき主階段（x 26.6〜84.4）の継ぎ目隙間が
+    均一になる（基板同士のテッセレーションがそのままケースに写る）。
+    背面ラン（x>=84.4、段5+6 は現行どおり1ラン）だけは例外扱い:
+      - long: フレームのウェル（ポケット+0.25）が現行フェイス 177.222 を
+        既に超えている（リムが開いている）ため、フェイスを現行維持する
+        （プロファイル整形は x<84.4 で打ち切り、背面ランには触れない）。
+      - short: 段5の統一フェイス（24.46-2.7=21.76、現行 T1 と一致）を
+        SEAM_BACK_EXT=2.0 だけ延長した 19.76 にし、long の現行フェイス
+        との隙間もドッキング位置で約 0.3 になるよう合わせる。
+    戻り値: (new_outline, report, chain)
+      chain は壁厚キャップ（stair_strip）用のラン列（T/R の seg を持つ）。
+    """
+    steps = PCB_STEPS[half]                    # [(x0, level)] x 6段
+    bounds = [s[0] for s in steps] + [PCB_XB]  # [3.2, 26.6, 46.2, 65.2, 84.4, 103.4, 113.7]
+    sgn = -1 if half == "short" else 1         # 階段側の向き（short は -y）
+    # 踏面フェイス（段1〜4 は統一ルール、段5+6 は背面ランとして統合）
+    faces = [lev + sgn * SEAM_PROJ for _, lev in steps[:4]]
+    if half == "short":
+        back_face = steps[4][1] + sgn * SEAM_PROJ - SEAM_BACK_EXT   # 19.76
+        ranges = [(bounds[i], bounds[i + 1], faces[i]) for i in range(4)]
+        ranges.append((bounds[4], bounds[6], back_face))
+    else:
+        ranges = [(bounds[i], bounds[i + 1], faces[i]) for i in range(4)]
+        back_face = None   # long の背面ランは現行維持（整形範囲外）
+    x0s, x1s = ranges[0][0], ranges[-1][1]
+    # 階段状プロファイル（西→東）: 踏面と蹴上を交互に辿る点列
+    prof = [(ranges[0][0], ranges[0][2])]
+    for i in range(1, len(ranges)):
+        prof.append((ranges[i][0], ranges[i - 1][2]))   # 蹴上（x 一定で段差）
+        prof.append((ranges[i][0], ranges[i][2]))       # 次の踏面
+    prof.append((ranges[-1][1], ranges[-1][2]))
+    # 外側（階段側）への切り取りポリゴンと、内側へのフィルポリゴン
+    far = -40.0 if sgn < 0 else 230.0
+    cut = Polygon(prof + [(x1s, far), (x0s, far)])
+    off = -sgn * SEAM_FILL_DEPTH
+    fill = Polygon(prof + [(x, y + off) for (x, y) in reversed(prof)])
+    base = outline_q.difference(cut)
+    if base.is_empty:
+        base = outline_q
+    new_outline = largest(unary_union([largest(base), fill]))
+    # レポートとキャップ用ラン列
+    report, chain = [], []
+    names = ["T1", "T2", "T3", "T4", "T-back"]
+    for i, (xa, xb, f) in enumerate(ranges):
+        lev = steps[i][1] if i < 4 else None
+        report.append(dict(name=names[i], kind="T", fixed=lev, out=sgn, face=f))
+        chain.append(dict(kind="T", a=(xa, f), b=(xb, f), fixed=lev, out=sgn,
+                          seg=LineString([(xa, f), (xb, f)])))
+        print(f"[{half}] seam {names[i]}: tread x[{xa:.1f},{xb:.1f}] "
+              f"{'pcb level ' + format(lev, '.2f') if lev is not None else 'back run (merged 5+6)'} "
+              f"-> face={f:.3f}")
+    for i in range(1, len(ranges)):
+        B = ranges[i][0]
+        flo, fhi = ranges[i - 1][2], ranges[i][2]
+        chain.append(dict(kind="R", a=(B, flo), b=(B, fhi), fixed=B, out=sgn,
+                          seg=LineString([(B, flo), (B, fhi)])))
+        print(f"[{half}] seam R{i}: riser x={B:.2f} (shared boundary, "
+              f"face span {flo:.2f}..{fhi:.2f})")
+    print(f"[{half}] seam outline: area {outline_q.area:.0f} -> {new_outline.area:.0f}")
+    return new_outline, report, chain
+
 def bridge_stair(poly, chain, disks=(), label=""):
     """階段側の輪郭をランごとの直線フェイスに寄せる（v2.2、§17.11）。
 
@@ -540,14 +633,18 @@ for half in ("short", "long"):
     # キャビティ面を最大約1.2mm引っ張る副作用の方が大きいため引退させた。
     # ソケット円盤の保険は check_v21 §8 で検証する（全ソケット中心が
     # 輪郭内側にドーム+1.33mm以上で収まることは OUTLINE3_NOTES で確認済み）。
-    chain, _chain_coords = stair_chain(outline_dxf)
     cavity_q = largest(outset(pcb, CAV_CLR, round_join=True))
     # v2.1: 階段外形をランごとのブロックに量子化（§17.3）。図面外形は
     # outline_dxf として保持し、下流は量子化後の outline を使う。
-    outline, stair_report = quantize_stair(outline_dxf, pcb, half, cav0=cavity_q)
+    outline_q, _q_report = quantize_stair(outline_dxf, pcb, half, cav0=cavity_q)
+    # v2.4: 階段フェイスを左右共有のシームカーブへ整形（§17.13、案2）。
+    # 量子化外形を土台に階段帯だけを置き換える（long の背面ランなど
+    # 対象外の部分と外形の他の辺は v2.3 のまま）。壁厚キャップ用の
+    # ラン列（halves["chain"]）もシーム側のラン列に替える。
+    outline, stair_report, seam_chain = seam_stair(outline_q, pcb, half)
     halves[half] = dict(outline=outline, outline_dxf=outline_dxf, pocket=pocket,
                         sw=sw_holes, slots=slots, pcb=pcb, stair=stair_report,
-                        chain=chain, cavity_q=cavity_q)
+                        chain=seam_chain, cavity_q=cavity_q)
     print(f"[{half}] outline area={outline.area:.0f} (dxf {outline_dxf.area:.0f}) "
           f"pocket area={pocket.area:.0f} "
           f"switch holes={len(sw_holes)} slots={len(slots)} pcb2 bbox={pcb.bounds}")
@@ -1017,6 +1114,9 @@ for half in ("short", "long"):
 # 全てパーツ別クリップとする。
 
 # 1) 階段境界（両半分）: バンドだけを切り出す
+#    v2.4: クリップ範囲は継ぎ目に関わる階段ラン全部（両半分の全踏面・
+#    全蹴上）を含む。左右の試作片同士を机の上で向き合わせれば、
+#    ドッキングの噛み合い（継ぎ目 0.3mm）を実物で確認できる。
 for half, yr in (("short", (-3, 50)), ("long", (127.2, 180.2))):
     export(clip(results[half]["band"], (-3, 117.3), yr), f"trial_stair_band_{half}")
 
