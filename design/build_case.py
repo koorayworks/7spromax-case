@@ -178,6 +178,13 @@ CAP_SCREW_KEEP = 1.5    # キャップから除外するネジ周りの余裕
 USB_XC   = 94.0         # USB開口中心 x（実測 93.7、両半分共通）
 USB_W    = 13.0         # USB開口幅（x方向。プラグ胴体の逃げ込み）
 USB_Z0, USB_Z1 = PCB_TOP + 2.5, PCB_TOP + 8.0
+# v2.4.3 (§17.17): 従来の開口カットは外面から 1mm しか入っておらず、
+# 端壁（内面まで約 4.2mm）の内側に 2.8mm のウェブが残って開口が
+# 貫通していなかった（実測で確定）。貫通カット＋プラグポケットで直す。
+USB_CUT_IN   = 7.0      # 貫通カットの内側への食い込み（外面基準）
+USB_POCKET_W = 22.0     # プラグポケット幅（x方向、開口中心 ±11）
+USB_POCKET_Z0 = 8.6     # プラグポケット下端（開口下端 9.8 の 1.2 下）
+USB_POCKET_D = 3.0      # プラグポケット深さ（外面から。残り壁約 1.4）
 # TRRS: 細いタブの中心 y を写真計測（short はタブ穴 (107.06,64.07) と整合、
 # long はタブ穴2個 y≈83.4/83.6 と整合）。旧値（外側端から 55）は
 # short で約 24mm、long で約 28mm ずれていた。
@@ -248,6 +255,11 @@ FIN_EPS     = 0.15      # スイッチ穴がプレート外周にこれ未満の
 FIN_EPS_OUT = 0.5       # v2.1: 角穴（スイッチ穴）については閾値を 0.5 に拡張し、
                         # 穴〜外形間で 0.5 未満の材料（スリバー）を開口側に吸収する。
                         # 横長スロットは従来どおり FIN_EPS（背面縁の notch 化を避ける）
+FIN_RESTORE_TOL = 0.05  # v2.4.3: fin-fix 復元の判定許容差（§17.16）。fin-fix 前の
+                        # フットプリントで中心走査の開口が設計値 ±この値に収まる
+                        # 角穴は「全周に壁があった穴」とみなし、堀で断たれた壁を
+                        # 戻して開口を設計値に復元する。もともと縁に開いた notch
+                        # （開口が設計値より大きい穴）は対象外。
 
 SIMPLIFY = 0.03  # 外形/ポケットの単純化トレランス（円弧の弦誤差として許容）
 
@@ -734,6 +746,36 @@ def square_poly(cx, cy, size):
     h = size / 2
     return Polygon([(cx - h, cy - h), (cx + h, cy - h), (cx + h, cy + h), (cx - h, cy + h)])
 
+def opening_at(foot, cx, cy):
+    """フットプリント（材料ポリゴン）上で点 (cx, cy) を通る void ランの
+    幅 (x 方向, y 方向) を返す。材料区間の隙間のうち中心を含むものを測る。
+    fin-fix 復元の判定（§17.16）に使う。"""
+    def _spans(axis, v):
+        if axis == "x":
+            line = LineString([(cx - 40.0, v), (cx + 40.0, v)])
+        else:
+            line = LineString([(v, cy - 40.0), (v, cy + 40.0)])
+        inter = foot.intersection(line)
+        if inter.is_empty:
+            return []
+        geoms = [inter] if inter.geom_type == "LineString" else list(inter.geoms)
+        out = []
+        for g in geoms:
+            if g.length > 0:
+                vals = [c[0] if axis == "x" else c[1] for c in g.coords]
+                out.append((min(vals), max(vals)))
+        return sorted(out)
+
+    def _run(spans, c):
+        prev = None
+        for a, b in spans:
+            if a > c:
+                return a - (prev if prev is not None else c - 40.0)
+            prev = b
+        return (c + 40.0) - (prev if prev is not None else c - 40.0)
+
+    return _run(_spans("x", cy), cx), _run(_spans("y", cx), cy)
+
 def ring_prism(poly_outer, poly_inner, z0, z1):
     """輪郭2つに挟まれたリング状プリズム（スカート・溝用）。
     内側プリズムは z を少しはみ出させて切り口をきれいにする。"""
@@ -979,8 +1021,9 @@ def build_half(half):
     # 穴カットだけでも首部 0.5 未満で分離してしまう（無修正でも最終
     # フットプリントが複数成分になることを確認済み）ため、一体に保てない
     # ストリップは notch として開口側へ吸収するのが唯一の一貫した解になる。
-    fin_parts = [hp.buffer(FIN_EPS_OUT) for hp in sq_polys
-                 if hp.boundary.distance(plate_bnd.boundary) < FIN_EPS_OUT]
+    fin_sq = [hp for hp in sq_polys
+              if hp.boundary.distance(plate_bnd.boundary) < FIN_EPS_OUT]
+    fin_parts = [hp.buffer(FIN_EPS_OUT) for hp in fin_sq]
     fin_parts += [hp.buffer(FIN_EPS) for hp in H["slots"]
                   if hp.boundary.distance(plate_bnd.boundary) < FIN_EPS]
     plate_bnd_p = plate_bnd
@@ -989,6 +1032,33 @@ def build_half(half):
         plate_bnd_p = shp(ring_pts(largest(plate_bnd.difference(moat))))
         print(f"[{half}] plate fin-fix: {len(fin_parts)} hole(s) near outline, "
               f"outline area {plate_bnd.area:.0f} -> {plate_bnd_p.area:.0f}")
+    # ---------- v2.4.3: fin-fix で断たれた「閉じた穴」の壁を復元（§17.16） ----------
+    # 本人目視指摘＋親側実測で確定した欠陥: long の階段×背面角の穴
+    # (93.72, 167.44) は、fin-fix 前は全周に壁があり開口は設計どおり
+    # 14.15 角だったが、穴の上辺〜外周の壁が 0.45mm しかなく、0.5mm の
+    # 堀が壁を断ち切って開口が外側の切り欠きとつながった（実測 x 15.0 /
+    # y 22.5 以上、MX のパチ留めタブが掛からない）。ブリッジ（§17.14）の
+    # 上限は cavity-0.2 で、この穴は基板踏面（y=171.6、§17.12 の推定）
+    # より外にはみ出すため、壁を「追加」で直すことはできない。代わりに、
+    # fin-fix 前のフットプリントで開口が設計値ちょうどだった角穴に限り、
+    # 堀が削った材料（fin-fix 前の外周 plate_bnd の内側のみ）を戻し、
+    # 開口を設計値に復元する。もともと縁へ開いた notch 穴（開口が設計値
+    # より大きい）は判定で外れ、従来どおり堀が残る。戻す材料は
+    # plate_bnd の内側だけなので §17.14/§17.15 のエンベロープは超えない。
+    if fin_sq:
+        foot_pre = plate_bnd.difference(unary_union(hole_polys))
+        for hp in fin_sq:
+            cc = hp.centroid
+            ow, oh = opening_at(foot_pre, cc.x, cc.y)
+            if (abs(ow - SW_HOLE_MODEL) <= FIN_RESTORE_TOL
+                    and abs(oh - SW_HOLE_MODEL) <= FIN_RESTORE_TOL):
+                collar = plate_bnd.intersection(hp.buffer(FIN_EPS_OUT))
+                if not collar.is_empty and collar.area > 0:
+                    plate_bnd_p = shp(ring_pts(largest(
+                        unary_union([plate_bnd_p, collar]))))
+                    print(f"[{half}] plate fin-fix restore: hole "
+                          f"({cc.x:.2f},{cc.y:.2f}) collar {collar.area:.1f} mm2 "
+                          f"restored, outline area -> {plate_bnd_p.area:.0f}")
     plate = prism(plate_bnd_p, PLATE_BOT, PLATE_TOP)
     for hp in hole_polys:
         plate = plate - prism(hp, PLATE_BOT - 0.2, PLATE_TOP + 0.2)
@@ -1023,11 +1093,18 @@ def build_half(half):
     for tc in TACT_CENTERS[half]:
         frame = frame - box(PADDLE_SLOT_X0, xmax + 1, tc - PADDLE_SLOT_HW, tc + PADDLE_SLOT_HW,
                             PADDLE_SLOT_Z0, PADDLE_SLOT_Z1)
-    # USB開口（外側端の壁）
+    # USB開口（外側端の壁）。v2.4.3: 壁を貫通させる＋外面にプラグ
+    # ポケット（プラグ胴体が入る座ぐり）を追加（§17.17）。
     if half == "short":
-        frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2, ymax - 1, ymax + 2, USB_Z0, USB_Z1)
+        frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
+                            ymax - USB_CUT_IN, ymax + 2, USB_Z0, USB_Z1)
+        frame = frame - box(USB_XC - USB_POCKET_W / 2, USB_XC + USB_POCKET_W / 2,
+                            ymax - USB_POCKET_D, ymax + 2, USB_POCKET_Z0, USB_Z1)
     else:
-        frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2, -2, 1, USB_Z0, USB_Z1)
+        frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
+                            -2, USB_CUT_IN, USB_Z0, USB_Z1)
+        frame = frame - box(USB_XC - USB_POCKET_W / 2, USB_XC + USB_POCKET_W / 2,
+                            -2, USB_POCKET_D, USB_POCKET_Z0, USB_Z1)
     # TRRS開口（背面壁）
     frame = frame - box(xmax - 6.5, xmax + 1, trrs_y - TRRS_W / 2, trrs_y + TRRS_W / 2, TRRS_Z0, TRRS_Z1)
 
