@@ -217,6 +217,10 @@ BACK_SCREW_SPECS = {  # サイズ別の寸法
     "M3": dict(tap=2.8, clr=3.4, cb=6.5, tap_depth=6.6),
     "M2": dict(tap=1.7, clr=2.4, cb=4.5, tap_depth=5.6),
 }
+# 背面ネジ同士の最小中心間隔（v2.4.2 §17.15）。背面の直線化で slack が
+# 帯域境界の両側で同点タイになると、隣接帯域が境界付近に寄って
+# ボス同士が重なる配置を選んでしまうため、既配置から離れた候補を優先する。
+BACK_SCREW_MIN_SEP = 12.0
 # 基板ネジ穴を使う吊りボス（スイッチプレート裏面, M3）: pcb_screw_holes の
 # HIGH/MEDIUM 候補のうち、ボス（Ø7）がスイッチ開口・マイコン域と干渉せず
 # プレート上に載る位置だけを自動採用する（不採用理由は標準出力に出る）。
@@ -806,7 +810,13 @@ def plan_screws(half, plate_bnd, cavity):
                 continue
             cand = [f for f in found if b0 <= f[0] < b1]
             if cand:
-                y, bx, slack = max(cand, key=lambda f: f[2])
+                far = [f for f in cand
+                       if all(abs(f[0] - e["y"]) >= BACK_SCREW_MIN_SEP
+                              for e in back)]
+                if far and len(far) < len(cand):
+                    print(f"[{half}] back screw band y[{b0:.0f},{b1:.0f}): "
+                          f"min-sep filter {len(cand)} -> {len(far)} cand")
+                y, bx, slack = max(far if far else cand, key=lambda f: f[2])
                 back.append(dict(x=bx, y=y, size=size))
                 print(f"[{half}] back screw {size} band y[{b0:.0f},{b1:.0f}): "
                       f"-> ({bx:.2f},{y:.0f}) slack={slack:.2f}")
@@ -918,6 +928,7 @@ def build_half(half):
     # 以内に限定する（階段側以外・既存の外周は変えない）。ネジ計画
     # （背面ネジ／吊りボス）は変更前の外周で確定済みで、v2.4 と同一に保つ。
     if PLATE_BRIDGE:
+        pre_bridge = plate_bnd
         strip = stair_profile_line(half).buffer(PLATE_BRIDGE_STRIP) \
                                           .intersection(outline)
         allow = inset(cavity_full, PLATE_BRIDGE_CLR) \
@@ -929,6 +940,31 @@ def build_half(half):
             H["plate_bnd"] = plate_bnd
             print(f"[{half}] plate bridge: fill area={fill.area:.1f} mm2 "
                   f"(dropped by largest: {merged.area - plate_bnd.area:.2f}) "
+                  f"plate outline area -> {plate_bnd.area:.0f}")
+        # v2.4.2 (§17.15): 階段×背面の角で fill が作る孤立した歯を落とす。
+        # long では fill がポケット切り欠きの下（最後の蹴上 x=103.4 より
+        # 背面側、テール踏面レベル +0.3 以下の角ブロック帯）に歯
+        # （107.2〜113.8 × 164.2〜171.1、44.8mm2）を作り、切り欠きとの
+        # 間に 2.1mm のスリットが残って櫛状になる（本人目視指摘）。
+        # 最寄りの穴 (93.7, 167.4) まで 13mm 以上あり縁サポートには
+        # 寄与しないため、fill 追加分に限ってこの帯を取り除き、角を
+        # 単純な塊に戻す。short では帯内の fill 追加分は 0 で無変化
+        # （検証済み）。§17.14 の上限（cavity-0.2 等）は変更しない。
+        tail_x0, tail_lv = PCB_STEPS[half][-1]
+        if half == "long":
+            zone = Polygon([(tail_x0, -1e4), (1e4, -1e4),
+                            (1e4, tail_lv + 0.35),
+                            (tail_x0, tail_lv + 0.35)])
+        else:
+            zone = Polygon([(tail_x0, tail_lv - 0.35),
+                            (1e4, tail_lv - 0.35),
+                            (1e4, 1e4), (tail_x0, 1e4)])
+        tooth = plate_bnd.difference(pre_bridge).intersection(zone)
+        if not tooth.is_empty and tooth.area > 0:
+            plate_bnd = largest(plate_bnd.difference(tooth))
+            H["plate_bnd"] = plate_bnd
+            print(f"[{half}] plate corner cleanup: removed fill tooth "
+                  f"{tooth.area:.1f} mm2 in stair/back corner zone, "
                   f"plate outline area -> {plate_bnd.area:.0f}")
     xmax = outline.bounds[2]
     ymax = outline.bounds[3]
