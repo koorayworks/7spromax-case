@@ -1,10 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-7sProMax 3Dプリントケース 立体設計 v2.1
+7sProMax 3Dプリントケース 立体設計 v2.3
 
-v1 の実物合わせで判明した3不適合（階段キャビティ干渉／スイッチプレート穴
-14.95mm ではパチ留めできない／パドルポケットが羽根込み幅 8.7mm に不足）を、
-分割済み基板スキャンの実測（PCB_SCAN2_NOTES）とパドル実測で作り直した版。
+v2.3 の要点（詳細は DESIGN_NOTES §17.12）:
+  - 基板外形を pcb_outline3 に切り替えた。outline2 の階段帯はスキャンの
+    エッジ探索が基板表面の段差状グルーブを実縁と誤認した幻影（最大で
+    約27mm内側への zigzag）を含んでいたため、実測ソケット中心・
+    19.05mmピッチ・公式図面の段位置をアンカーに矩形ステップとして
+    再構成した（template/OUTLINE3_NOTES.md）。非階段部は outline2 と同一。
+  - 階段の壁厚に上限（STAIR_WALL=2.2）を導入した: 階段帯ではキャビティを
+    「外形から 2.2mm より深い領域」との和集合まで広げ、壁が段差の形に
+    沿って概ね均一な厚さになるようにした（三角形の厚い壁の除去、
+    本人決定）。基板+0.5 のクリアランスはキャビティを広げる方向の変更
+    なので割らない。
 
 v2.1 の要点（詳細は DESIGN_NOTES §17）:
   - 積層は本家と同じ構成にした: 黒ボトムトレイ → 白い側面バンド（LED の
@@ -48,7 +56,7 @@ v2 の要点:
 
 入力:
   ../work_design/dxf_polys.json  （template DXFの抽出ポリゴン: OUTLINE/POCKET/SWITCH_HOLES）
-  ../template/pcb_outline2_short.csv / pcb_outline2_long.csv （実測基板外形・階段実測版）
+  ../template/pcb_outline3_short.csv / pcb_outline3_long.csv （実測基板外形・階段再構成版、v2.3）
   ../template/pcb_screw_holes.csv （基板ネジ穴候補, 信頼度つき）
 
 未確定（パラメータ化して試作片で当てる）:
@@ -125,9 +133,15 @@ WIN_MERGE_GAP    = 3.0    # ボトム窓どうしの間隔がこれ未満なら�
 STAIR_WALL     = 2.2    # 階段ランごとの公称壁厚（キャビティ＝基板+0.5 から）
 # --- v2.2: 階段内側のブリッジ化（§17.11） ---
 STAIR_DISK_R   = 3.25   # 階段帯の実測ソケット中心からキャビティ面までの最小距離
-                        # （ドーム半径 2.75 + クリアランス 0.5。outline2 の階段帯は
-                        # 実測ドーム中心が最大 2.52mm 外にはみ出す幻影を含むため、
-                        # ブリッジ面はこの円盤も呑む位置まで寄せる）
+                        # （ドーム半径 2.75 + クリアランス 0.5。v2.3 で輪郭は
+                        # outline3（矩形ステップ再構成）になったため通常は
+                        # 余裕があるが、保険として残す）
+# --- v2.3: 階段壁厚の上限（§17.12、本人決定で三角形の厚い壁を除去） ---
+STAIR_WALL_CAP = True   # 階段帯の壁厚を STAIR_WALL 以下に制限する
+CAP_STRIP_EXTRA = 2.5   # キャップを効かせる帯 = 階段ラン列のセグメントを
+                        # (STAIR_WALL + この値) だけ膨らませた範囲
+CAP_SCREW_KEEP = 1.5    # キャップから除外するネジ周りの余裕
+                        # （タップ半径 + この値 の円盤は壁を残す）
 
 # --- 開口（v2.2 で実物写真計測により是正、§17.11） ---
 # USB: 本人確認で「タブ先端＝ケース外側端面」向き。中心 x は 7378/7379 の
@@ -320,7 +334,7 @@ def quantize_stair(outline, pcb, half, cav0=None):
     なる（v2 の stair 解析）。そこで各ランを 1 本の直線フェイスに置き換え、
     キャビティから STAIR_WALL を確保する位置までランごとに外形を
     押し出す（ラン内は最大値で統一）。
-    cav0 は壁厚の基準にするキャビティ（v2.2 ではブリッジ済み cavity_q）。
+    cav0 は壁厚の基準にするキャビティ（v2.3 では outset(pcb3, 0.5)）。
     戻り値: (new_outline, report)  report はラン別の辞書リスト。
     """
     if cav0 is None:
@@ -381,12 +395,24 @@ def quantize_stair(outline, pcb, half, cav0=None):
             f = faces[idx]
             inner = r["fixed"] - r["out"] * 2.0   # 外形の内側へ 2.0 潜らせる
             if r["kind"] == "T":
+                # v2.3: 矩形の x 範囲は隣接蹴上の「フェイス位置と図面位置の
+                # 外側いっぱい」まで広げる。フェイスだけに合わせると、図面の
+                # 踏面／蹴上セグメントが矩形の間に残って「湾」になり、
+                # キャビティがそこから外へはみ出す（v2.2 からの既存欠陥）。
                 xa = faces[idx - 1] if idx > 0 else s_pt[0]
                 xb = faces[idx + 1] if idx < len(chain) - 1 else e_pt[0]
+                if idx > 0:
+                    xa = min(xa, chain[idx - 1]["fixed"])
+                if idx < len(chain) - 1:
+                    xb = max(xb, chain[idx + 1]["fixed"])
                 rects.append(Polygon([(min(xa, xb), min(f, inner)), (max(xa, xb), min(f, inner)),
                                       (max(xa, xb), max(f, inner)), (min(xa, xb), max(f, inner))]))
             else:
                 ya, yb = faces[idx - 1], faces[idx + 1]
+                if idx > 0:
+                    ya = min(ya, chain[idx - 1]["fixed"])
+                if idx < len(chain) - 1:
+                    yb = max(yb, chain[idx + 1]["fixed"])
                 rects.append(Polygon([(min(f, inner), min(ya, yb)), (max(f, inner), min(ya, yb)),
                                       (max(f, inner), max(ya, yb)), (min(f, inner), max(ya, yb))]))
         new_outline = largest(unary_union([outline] + rects))
@@ -415,15 +441,13 @@ def quantize_stair(outline, pcb, half, cav0=None):
 def bridge_stair(poly, chain, disks=(), label=""):
     """階段側の輪郭をランごとの直線フェイスに寄せる（v2.2、§17.11）。
 
-    pcb_outline2 の階段帯は実基板の矩形ステップではなく内側配線グルーブを
-    誤認した深い三角形の湾を含み（実測ソケット中心が最大 2.52mm 外に
-    はみ出す）、キャビティ／レッジ内側がその湾に追従すると、上面視で
-    外形・ウェルの矩形ステップと重なって「三角形のトゲ」に見える。
-    そこで外形側の quantize_stair と同じラン列を使い、各ランの範囲内で
-    輪郭が壁側へ最も張り出す点にフェイスを合わせ、湾側を矩形フィルで
-    埋める（輪郭は元の輪郭の和集合なので、outline2 に対するクリアランス
-    0.5 は割らない）。disks は (cx, cy) の実測ソケット中心列で、階段帯では
-    半径 STAIR_DISK_R の円盤も呑む位置までフェイスを寄せる（幻影対策）。
+    【v2.3 で引退】v2.2 では pcb_outline2 の階段帯が内側配線グルーブを
+    誤認した深い三角形の湾を含んでいた（実測ソケット中心が最大 2.52mm
+    外にはみ出す）ため、その対策として入れた。v2.3 で輪郭は outline3
+    （矩形ステップ再構成）に替わり、fill 矩形が隣接蹴上の円弧や窓外の
+    境界点を拾ってキャビティ面を引っ張る副作用（実測で最大約1.2mm）
+    の方が大きいため、キャビティ／レッジとも適用をやめた（§17.12）。
+    記録のため関数だけ残す。
     """
     bnd = poly.boundary
     pts = [bnd.interpolate(s) for s in np.arange(0, bnd.length, 0.25)]
@@ -483,6 +507,14 @@ def stair_disks(half):
             out.append((x, y))
     return out
 
+def stair_strip(chain, outline):
+    """壁厚キャップを効かせる帯: 階段ラン列の全セグメントを
+    (STAIR_WALL + CAP_STRIP_EXTRA) だけ膨らませ、外形と交差させた範囲。
+    背面リム（ネジ帯域）には届かないようラン列基準で限定する。"""
+    segs = [r["seg"] for r in chain]
+    buf = unary_union([s.buffer(STAIR_WALL + CAP_STRIP_EXTRA) for s in segs])
+    return largest(buf.intersection(outline))
+
 halves = {}
 for half in ("short", "long"):
     outline_dxf = shp(loc(dxf["OUTLINE"][IDX[half]]["pts"], half)).simplify(SIMPLIFY)
@@ -500,13 +532,16 @@ for half in ("short", "long"):
             else:
                 c = poly.centroid
                 sw_holes.append(dict(cx=c.x, cy=c.y, poly=poly))  # 中心は実測検証済み
-    pcb_pts = np.loadtxt(f"{BASE}/template/pcb_outline2_{half}.csv", delimiter=",", skiprows=1)
+    pcb_pts = np.loadtxt(f"{BASE}/template/pcb_outline3_{half}.csv", delimiter=",", skiprows=1)
     pcb = shp([tuple(r) for r in pcb_pts])
-    # v2.2: キャビティ側の階段輪郭を先にブリッジ化し（§17.11）、外形の
-    # 量子化はブリッジ済みキャビティを基準に壁厚を確保する。
+    # v2.3: キャビティは outset(pcb3, 0.5) そのもの（§17.12）。
+    # v2.2 の bridge_stair は outline2 の幻影対策だったが、矩形ステップの
+    # outline3 に対しては fill 矩形が隣接蹴上の円弧や窓外の点を拾って
+    # キャビティ面を最大約1.2mm引っ張る副作用の方が大きいため引退させた。
+    # ソケット円盤の保険は check_v21 §8 で検証する（全ソケット中心が
+    # 輪郭内側にドーム+1.33mm以上で収まることは OUTLINE3_NOTES で確認済み）。
     chain, _chain_coords = stair_chain(outline_dxf)
-    cavity_q = bridge_stair(largest(outset(pcb, CAV_CLR, round_join=True)),
-                            chain, stair_disks(half), label=f"{half} cavity")
+    cavity_q = largest(outset(pcb, CAV_CLR, round_join=True))
     # v2.1: 階段外形をランごとのブロックに量子化（§17.3）。図面外形は
     # outline_dxf として保持し、下流は量子化後の outline を使う。
     outline, stair_report = quantize_stair(outline_dxf, pcb, half, cav0=cavity_q)
@@ -698,8 +733,8 @@ def plan_screws(half, plate_bnd, cavity):
 def build_half(half):
     H = halves[half]
     outline, pocket, pcb = H["outline"], H["pocket"], H["pcb"]
-    # v2.2: キャビティはブリッジ済み cavity_q（階段内側をランごとの直線
-    # フェイスに寄せた基板+0.5、§17.11）を正とする。
+    # v2.3: キャビティは cavity_q（= outset(pcb3, 0.5)、§17.12）を
+    # 最小壁厚でクリップしたものを正とする。
     cavity = largest(H["cavity_q"].intersection(inset(outline, MIN_WALL)))
     # フレーム下帯専用のキャビティ（MIN_WALL クリップなし）。
     # クリップ付き cavity は背面タブ先端など基板が外形に迫る箇所で基板側へ
@@ -721,6 +756,30 @@ def build_half(half):
     plate_bnd = largest(outset(pocket, PLATE_UNDERLAP).intersection(inset(outline, PLATE_CAP_INSET)))
     back_screws, hangs = plan_screws(half, plate_bnd, cavity)
     H["back_screws"], H["hangs"] = back_screws, hangs
+
+    # ---------- v2.3: 階段壁厚キャップ（§17.12、本人決定） ----------
+    # 階段帯では「外形から STAIR_WALL より深い領域」をキャビティへ和集合
+    # し、壁厚を STAIR_WALL 以下に制限する（段差の形に沿って概ね均一な
+    # 壁にし、三角形の厚い壁を消す）。キャビティを広げる方向のみの変更
+    # なので基板クリアランス（基板+0.5）は割らない。ネジ周りは保持
+    # 円盤で除外し、タップ穴の肉を残す。
+    if STAIR_WALL_CAP:
+        strip = stair_strip(H["chain"], outline)
+        deep = inset(outline, STAIR_WALL).intersection(strip)
+        keeps = [Point(e["x"], e["y"]).buffer(
+                     BACK_SCREW_SPECS[e["size"]]["tap"] / 2 + CAP_SCREW_KEEP)
+                 for e in back_screws]
+        keeps += [Point(e["x"], e["y"]).buffer(
+                      HANG_TAP_DIA / 2 + CAP_SCREW_KEEP) for e in hangs]
+        if keeps:
+            deep = deep.difference(unary_union(keeps))
+        if not deep.is_empty and deep.area > 0:
+            cavity_full = largest(unary_union([cavity_full, deep]))
+            cavity = largest(unary_union([cavity, deep])
+                             .intersection(inset(outline, MIN_WALL)))
+            H["cavity_full"], H["cavity"] = cavity_full, cavity
+            print(f"[{half}] stair wall cap: deep area={deep.area:.1f} mm2 "
+                  f"merged into cavity (stair wall <= {STAIR_WALL} mm)")
     # 吊りボス用の耳をプレート外周へ追加し、最終外周を確定
     ears = [Point(e["x"], e["y"]).buffer(HANG_DIA / 2 + 1.5) for e in hangs if e.get("ear")]
     if ears:
@@ -821,9 +880,9 @@ def build_half(half):
     band = band - prism(cavity, BAND_THIN_Z1, PCB_BOT + 0.1)
     # 基板支持レッジ（キャビティ壁から基板縁の下へ LEDGE_UNDER 潜る帯。
     # 外周はキャビティ壁の外へ食い込ませて融合させる。従来はボトム側だった）
-    # v2.2: レッジ内側もブリッジ化し、三角形の指を消す（§17.11）。
-    ledge_in_q = bridge_stair(inset(pcb, LEDGE_UNDER), H["chain"],
-                              label=f"{half} ledge")
+    # v2.2 ではレッジ内側もブリッジ化したが、v2.3 では outline3 の
+    # 矩形ステップにより inset そのままで直線フェイスになる（§17.12）。
+    ledge_in_q = inset(pcb, LEDGE_UNDER)
     H["ledge_in_q"] = ledge_in_q
     ledge = (prism(outset(cavity, LEDGE_EMBED, round_join=True), LEDGE_Z0, PCB_BOT)
              - prism(ledge_in_q, LEDGE_Z0 - 0.1, PCB_BOT + 0.1))

@@ -170,7 +170,12 @@ for half in HALVES:
 
 # ================= 6. 左右間クリアランス =================
 print("== 6. inter-half clearance (drawing coords) ==")
-ORIGIN = {"long": (25.382, 0.0), "short": (36.934, 183.414)}
+# 図面レイアウト原点（build_case.ORIGIN と同じ: 両半分とも背面が揃い
+# 相対 x オフセット 0、short は dy=183.414）。
+# v2.2 までの記録で使ったスキャン fit 用原点（long +25.382 / short
+# +36.934、相対 +11.552 の x ずれ）は原点混用で、左右間最接近を
+# 11.74mm と誤らせた（正しくは 15.59mm、§17.11 訂正済み）。
+ORIGIN = bc.ORIGIN
 def shifted(poly, half):
     ox, oy = ORIGIN[half]
     return Polygon([(x + ox, y + oy) for x, y in poly.exterior.coords])
@@ -205,4 +210,61 @@ for half in HALVES:
             mind = min(mind, d)
     print(f"  {half} plate: min positive hole->outline distance = "
           f"{mind if mind < 1e8 else float('nan'):.2f} (notched holes are 0/merged)")
+
+# ================= 8. 階段壁厚キャップの検証（v2.3、§17.12） =================
+# 階段帯の壁（外形 − キャビティ）内の格子点について、外形境界までの
+# 距離（＝侵食の意味での壁厚）の最大を測る。キャップにより STAIR_WALL
+# 以下になるはず。フレーム下帯用 cavity_full とバンドレッジ帯用
+# cavity の両方を見る。あわせて階段帯ソケット円盤の保険（中心から
+# キャビティ面まで STAIR_DISK_R 以上）も確認する。
+print("== 8. stair wall thickness in strip (cap check) + socket disks ==")
+for half in HALVES:
+    H = bc.halves[half]
+    outline = H["outline"]
+    strip = bc.stair_strip(H["chain"], outline)
+    xs = np.arange(outline.bounds[0], outline.bounds[2], 0.25)
+    ys = np.arange(outline.bounds[1], outline.bounds[3], 0.25)
+    for label, cav in (("cavity_full", H["cavity_full"]),
+                       ("cavity", H["cavity"])):
+        wall = outline.difference(cav).intersection(strip)
+        if wall.is_empty:
+            print(f"  {half} {label}: no wall in strip")
+            continue
+        vals = []
+        for x in xs:
+            for y in ys:
+                p = SPoint(x, y)
+                if wall.covers(p):
+                    vals.append(outline.boundary.distance(p))
+        vals = np.array(vals)
+        print(f"  {half} {label}: wall pts={len(vals)} "
+              f"max={vals.max():.3f} p99={np.percentile(vals, 99):.3f} "
+              f"(cap {bc.STAIR_WALL})")
+    cf = H["cavity_full"]
+    dsk = [SPoint(cx, cy).distance(cf.boundary)
+           for (cx, cy) in bc.stair_disks(half)]
+    print(f"  {half} stair socket disks: min center->cavity_full = "
+          f"{min(dsk):.3f} (need >= {bc.STAIR_DISK_R})")
+    # ネジ保持円盤の中は意図的に壁を残すので、キャップ検証からは除外
+    from shapely.ops import unary_union as _uu
+    keeps = [SPoint(e["x"], e["y"]).buffer(
+                 bc.BACK_SCREW_SPECS[e["size"]]["tap"] / 2
+                 + bc.CAP_SCREW_KEEP + 0.3)
+             for e in H["back_screws"]]
+    keeps += [SPoint(e["x"], e["y"]).buffer(
+                  bc.HANG_TAP_DIA / 2 + bc.CAP_SCREW_KEEP + 0.3)
+              for e in H["hangs"]]
+    wall2 = outline.difference(cf).intersection(strip)
+    if keeps:
+        wall2 = wall2.difference(_uu(keeps))
+    vals = []
+    for x in xs:
+        for y in ys:
+            p = SPoint(x, y)
+            if wall2.covers(p):
+                vals.append(outline.boundary.distance(p))
+    vals = np.array(vals)
+    print(f"  {half} cap check excl. screw keeps: wall pts={len(vals)} "
+          f"max={vals.max():.3f} p99={np.percentile(vals, 99):.3f} "
+          f"(cap {bc.STAIR_WALL})")
 print("CHECK DONE")
