@@ -1,23 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-7sProMax ケース v2 試作片ガイド図の生成（描画専用。設計データは変更しない）
+7sProMax ケース v2.1 試作片ガイド図の生成（描画専用。設計データは変更しない）
 
 組立プレビュー（斜視＋上面図）に、build_case.py の試作片クリップ範囲を
 半透明の色枠で重ね、「試作片が全体のどの範囲の切り出しか」を示す。
 
 クリップ定義は build_case.py の「試作片」セクションからそのまま転記:
-  - 階段 (trial_stair_*):  short x(-3,117.3) y(-3,50) / long x(-3,117.3) y(127.2,180.2)
-                           （bottom+plate+frame のフル積層クリップ）
-  - ネジ (trial_screw_*):  short x(-3,117.3) y(118,146.4) / long x(-3,117.3) y(100,180.2)
-                           （bottom+plate+frame のフル積層クリップ。v2 ネジ計画の確認）
-  - 角   (trial_corner_short): x(80,117.3) y(80,146.4)
-                           （bottom+frame の積層クリップ、short のみ）
+  - 階段 (trial_stair_band_<half>):  short x(-3,117.3) y(-3,50) / long x(-3,117.3) y(127.2,180.2)
+                           （v2.1 後半: 側面バンドだけのクリップ。バンドはレッジと
+                             階段外形の両方を持つため、これで基板との当たりが分かる）
+  - 角   (trial_corner_{tray,band,frame}_<half>): short x(80,117.3) y(80,146.4) /
+                           long x(80,117.3) y(-3,50)
+                           （トレイ／バンド／フレームのパーツ別クリップ。手で重ねて
+                             パドルスロット・タクト逃げを確認する）
+  ※ ネジ試作片（旧 trial_screw）は廃止（ネジ経路は仮想検証で確認）。
   ※ trial_plate_holes は全体からの切り出しではない（穴だけの単体小片）ため対象外。
+  試作片は全9片で、1回の印刷セッションに集約する方針（DESIGN_NOTES §17）。
 座標系は build_case.py と同じケース座標（mm）:
   X = 奥行（x=114 側が背面＝マイコン/パドル側）
   Y = 長さ（short: y=0 が階段側 / long: y=177.23 が階段側）
 出力 STL はパーツごとに最小 z=0 へ平行移動されているため、組立表示では
-  bottom: +0（元 0..5.7）、frame: +5.7（元 5.7..16.1）、
+  tray: +0（元 0..2.5）、band: +1.9（元 組立 1.9..5.7）、frame: +5.7（元 5.7..16.1）、
   plate short: +7.35（吊りボス下端 HANG_BOT=7.35 が最小）、plate long: +9.5（PLATE_BOT）
 を加えて組立位置に戻す。
 """
@@ -39,20 +42,18 @@ DES = f"{BASE}/design"
 CLIPS = {
     "short": {
         "stair":  dict(xr=(-3.0, 117.3), yr=(-3.0, 50.0)),
-        "screw":   dict(xr=(-3.0, 117.3),  yr=(118.0, 146.4)),
         "corner": dict(xr=(80.0, 117.3), yr=(80.0, 146.4)),
     },
     "long": {
         "stair":  dict(xr=(-3.0, 117.3), yr=(127.2, 180.2)),
-        "screw":   dict(xr=(-3.0, 117.3),  yr=(100.0, 180.2)),
+        "corner": dict(xr=(80.0, 117.3), yr=(-3.0, 50.0)),
     },
 }
 KINDS = [
-    ("screw",   "#2166e0", "ネジ試作片（青）: trial_screw\n　背面締結＋吊りボス帯・全パーツ積層。v2ネジ計画の当たり確認"),
-    ("stair",  "#1faa4d", "階段試作片（緑）: trial_stair\n　階段側50mm帯・全パーツ積層。実基板との噛み合い確認"),
-    ("corner", "#e03131", "角試作片（赤）: trial_corner_short\n　背面-外側の角。パドル×3・タクト窓・TRRS・USB開口まわり"),
+    ("stair",  "#1faa4d", "階段試作片（緑）: trial_stair_band\n　側面バンド（白）の階段側50mm帯。基板の歯・レッジとの当たり確認"),
+    ("corner", "#e03131", "角試作片（赤）: trial_corner_tray/band/frame\n　背面-外側の角をパーツ別に切り出し。手で重ねてパドル・タクト・開口まわりを確認"),
 ]
-ZOFF = {"bottom": 0.0, "frame": 5.7, "plate": {"short": 7.35, "long": 9.5}}
+ZOFF = {"tray": 0.0, "band": 1.9, "frame": 5.7, "plate": {"short": 7.35, "long": 9.5}}
 FRAME_TOP = 16.1
 
 # ---- 外形ポリゴン（build_case.py と同じ読み方） ----
@@ -95,10 +96,12 @@ def make_guide(half):
 
     # ---- 左: 組立斜視 ----
     ax = fig.add_subplot(1, 2, 1, projection="3d")
-    bot = load(f"bottom_case_{half}")
+    bot = load(f"bottom_tray_{half}")
+    ban = load(f"side_band_{half}")
     pla = load(f"switch_plate_{half}")
     fra = load(f"top_frame_{half}")
-    draw_mesh(ax, bot, "#6e6e6e", ZOFF["bottom"])
+    draw_mesh(ax, bot, "#6e6e6e", ZOFF["tray"])
+    draw_mesh(ax, ban, "#e8c86a", ZOFF["band"])
     draw_mesh(ax, pla, "#9a9a9a", ZOFF["plate"][half])
     draw_mesh(ax, fra, "#c9c9c9", ZOFF["frame"])
     for k, col, _ in kinds:
@@ -111,13 +114,13 @@ def make_guide(half):
     ax.view_init(elev=30, azim=-58)
     ax.set_box_aspect((mx[0] - mn[0], mx[1] - mn[1], 18))
     ax.set_xlabel("X: 奥行（+X が背面）"); ax.set_ylabel("Y: 長さ")
-    ax.set_title("組立斜視（ボトム＋プレート＋フレームを重ねた状態）", fontsize=11)
+    ax.set_title("組立斜視（トレイ＋バンド（黄）＋プレート＋フレームを重ねた状態）", fontsize=11)
 
     # ---- 右: 上面図（mm目盛り付き） ----
     ax2 = fig.add_subplot(1, 2, 2)
     pts = outline_pts(half)
     ax2.add_patch(MplPolygon(pts, closed=True, facecolor="#d9d9d9", edgecolor="#555555", lw=1.2, zorder=1))
-    labels = {"screw": "ネジ", "stair": "階段", "corner": "角"}
+    labels = {"stair": "階段", "corner": "角"}
     for k, col, _ in kinds:
         cl = CLIPS[half][k]
         (x0, x1), (y0, y1) = cl["xr"], cl["yr"]

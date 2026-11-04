@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""7sProMax ケース v1 プレビュー生成（出力済みSTLから描画する）"""
+"""7sProMax ケース v2.1 プレビュー生成（出力済みSTLから描画する）"""
 import numpy as np
 import trimesh
 import matplotlib
@@ -29,28 +29,35 @@ def set_view(ax, meshes, elev, azim):
     ax.view_init(elev=elev, azim=azim)
     ax.set_box_aspect((mx[0] - mn[0], mx[1] - mn[1], 18))
 
-# ---- 1) 分解斜視（short） ----
-bot, pla, fra = load("bottom_case_short"), load("switch_plate_short"), load("top_frame_short")
+# ---- 1) 分解斜視（short、4パーツ） ----
+# STL は最小 z=0 に落としてある。組立 z へ戻すオフセット:
+# tray 0 / band +1.9（スカート下端が組立 1.9）/ plate +7.35（ボス下端）/ frame +5.7
+ZASM = {"tray": 0.0, "band": 1.9, "plate": 7.35, "frame": 5.7}
+tra, ban, pla, fra = (load("bottom_tray_short"), load("side_band_short"),
+                      load("switch_plate_short"), load("top_frame_short"))
 fig = plt.figure(figsize=(11, 9))
 ax = fig.add_subplot(111, projection="3d")
-draw_mesh(ax, bot, "#555555", zoff=0)
-draw_mesh(ax, pla, "#3a7bd5", zoff=16)
-draw_mesh(ax, fra, "#b0b0b0", zoff=34)
-allv = np.vstack([bot.vertices, pla.vertices + [0, 0, 16], fra.vertices + [0, 0, 34]])
+draw_mesh(ax, tra, "#555555", zoff=0)
+draw_mesh(ax, ban, "#e8c86a", zoff=14)
+draw_mesh(ax, pla, "#3a7bd5", zoff=28)
+draw_mesh(ax, fra, "#b0b0b0", zoff=44)
+allv = np.vstack([tra.vertices, ban.vertices + [0, 0, 14], pla.vertices + [0, 0, 28],
+                  fra.vertices + [0, 0, 44]])
 mn, mx = allv.min(axis=0), allv.max(axis=0)
 c = (mn + mx) / 2; r = (mx - mn).max() / 2
-ax.set_xlim(c[0] - r, c[0] + r); ax.set_ylim(c[1] - r, c[1] + r); ax.set_zlim(0, 55)
+ax.set_xlim(c[0] - r, c[0] + r); ax.set_ylim(c[1] - r, c[1] + r); ax.set_zlim(0, 62)
 ax.view_init(elev=32, azim=-58)
-ax.set_title("7sProMax case v1 - short half, exploded\n(top: frame / middle: switch plate / bottom: bottom case)\nX=depth(back=+X) Y=length(stair at Y=0)")
+ax.set_title("7sProMax case v2.1 - short half, exploded\n(frame / switch plate / side band (white) / bottom tray)\nX=depth(back=+X) Y=length(stair at Y=0)")
 plt.tight_layout(); plt.savefig(f"{BASE}/preview_assembly_short.png", dpi=95)
 plt.close()
 
-# ---- 1b) 単体斜視（short 3パーツ） ----
-fig = plt.figure(figsize=(17, 6))
-for i, (name, col, ttl) in enumerate((("bottom_case_short", "#555555", "bottom case (short)"),
+# ---- 1b) 単体斜視（short 4パーツ） ----
+fig = plt.figure(figsize=(19, 6))
+for i, (name, col, ttl) in enumerate((("bottom_tray_short", "#555555", "bottom tray (short, black)"),
+                                      ("side_band_short", "#e8c86a", "side band (short, WHITE)"),
                                       ("switch_plate_short", "#3a7bd5", "switch plate (short)"),
                                       ("top_frame_short", "#b0b0b0", "top frame (short)"))):
-    ax = fig.add_subplot(1, 3, i + 1, projection="3d")
+    ax = fig.add_subplot(1, 4, i + 1, projection="3d")
     m = load(name)
     draw_mesh(ax, m, col)
     set_view(ax, [m], elev=35, azim=-58)
@@ -83,20 +90,22 @@ plt.close()
 fig, axes = plt.subplots(1, 2, figsize=(17, 6))
 for ax, (y0, title) in zip(axes, [(116.0, "section at Y=116 (paddle pocket #2, short)"),
                                   (60.0, "section at Y=60 (normal field, short)")]):
-    for name, col in (("bottom_case_short", "#555555"), ("switch_plate_short", "#3a7bd5"),
-                      ("top_frame_short", "#b0b0b0")):
+    for name, col, zo in (("bottom_tray_short", "#555555", 0.0),
+                          ("side_band_short", "#e8912d", 1.9),
+                          ("switch_plate_short", "#3a7bd5", 7.35),
+                          ("top_frame_short", "#b0b0b0", 5.7)):
         m = load(name)
         sec = m.section(plane_origin=[0, y0, 0], plane_normal=[0, 1, 0])
         if sec is None:
             continue
         for ent in sec.entities:
             pts = sec.vertices[ent.points]
-            ax.plot(pts[:, 0], pts[:, 2], color=col, lw=1.2)
-    # 基板・FR4 の想定位置を破線で
+            ax.plot(pts[:, 0], pts[:, 2] + zo, color=col, lw=1.2)
+    # 基板の想定位置とボトム床を破線で
     ax.axhspan(5.7, 7.3, color="green", alpha=0.10)
-    ax.axhspan(1.3, 2.5, color="orange", alpha=0.15)
+    ax.axhspan(0.0, 2.5, color="gray", alpha=0.15)
     ax.text(2, 6.4, "PCB (5.7-7.3)", fontsize=8, color="green")
-    ax.text(2, 1.7, "FR4 plate (1.3-2.5)", fontsize=8, color="darkorange")
+    ax.text(2, 1.1, "tray floor (0-2.5) / orange = side band (white, 2.5-5.7)", fontsize=8, color="dimgray")
     ax.axhline(16.1, color="gray", ls=":", lw=0.8)
     ax.set_xlabel("X (depth, back = +X)"); ax.set_ylabel("Z")
     ax.set_title(title); ax.grid(True, alpha=0.3); ax.set_aspect("auto")
@@ -111,9 +120,8 @@ layers = [
     (11.0, 9.5, "SWITCH PLATE 1.5 (separate part)", "#3a7bd5"),
     (9.5, 7.3, "gap: socket top +2.0 over PCB", "#eeeeee"),
     (7.3, 5.7, "PCB 1.6", "#2e7d32"),
-    (5.7, 2.5, "gap 3.2 (ex-acrylic layer / bottom-case wall zone)", "#eeeeee"),
-    (2.5, 1.3, "FR4 bottom plate 1.2 (in recess)", "#e8a33d"),
-    (1.3, 0.0, "bottom case floor (under recess)", "#555555"),
+    (5.7, 2.5, "SIDE BAND (WHITE) ring: glow zone 2.5-4.4 wall 1.2 / ledge zone 4.4-5.7 (inside: 3.2 component space)", "#f2e3c6"),
+    (2.5, 0.0, "bottom TRAY floor 2.5 (black, no FR4 plate)", "#555555"),
 ]
 import matplotlib.patches as mpatches
 for top, bot_, label, col in layers:

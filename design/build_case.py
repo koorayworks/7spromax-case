@@ -1,10 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-7sProMax 3Dプリントケース 立体設計 v2
+7sProMax 3Dプリントケース 立体設計 v2.1
 
 v1 の実物合わせで判明した3不適合（階段キャビティ干渉／スイッチプレート穴
 14.95mm ではパチ留めできない／パドルポケットが羽根込み幅 8.7mm に不足）を、
 分割済み基板スキャンの実測（PCB_SCAN2_NOTES）とパドル実測で作り直した版。
+
+v2.1 の要点（詳細は DESIGN_NOTES §17）:
+  - 積層は本家と同じ構成にした: 黒ボトムトレイ → 白い側面バンド（LED の
+    光漏れ層、z 2.5〜5.7 の全周リング、薄壁部 1.2mm）→ 基板 → 黒プレート →
+    黒フレーム。旧ボトムケースの外周壁（床上面〜基板下面）をバンドとして
+    独立させ、トレイは床＋内側の造形だけの浅いトレイにした。バンドと
+    トレイの位置決めはスカート＋溝（全周）。
+  - トップフレーム下帯（z 5.7〜9.5）の内壁をプレート帯域（pocket+3.0）から
+    キャビティ輪郭（基板+0.5、クリップなし）へ変更し、基板との干渉（v2 で約1,559mm3）を解消。
+  - フレームのパドル通路を帯全高開放からタクト別スロット（中心±3.0、
+    z 6.2〜10.1、内側端 x=104）へ変更し、パドルを保持できる形にした。
+  - 階段外形をラン（踏面／蹴上）ごとの直線ブロックに量子化し、各ランで
+    キャビティから壁厚 2.2mm を確保（内側のキャビティは基板+0.5 のまま）。
+  - バンドのパドル窓は gap 3.0 未満の窓間を連結し、細い歯・孤立フィンを
+    除去。short の窓端フィンは切り取り、long はウェブで接続。
+  - スイッチ穴〜プレート外周のフィン取り込み閾値を 0.5mm に拡張
+    （横長スロットは従来どおり 0.15mm）。
+  - 試作片は1回の印刷セッションに集約（全9片、パーツ別クリップのみ）。
 
 v2 の要点:
   - 白FR4ボトムプレートは廃止。構成は トップフレーム／スイッチプレート／
@@ -93,6 +111,18 @@ TACT_CENTERS   = {      # タクト中心 y（ケース座標, PCB_SCAN2_NOTES �
     "short": [102.6, 110.9, 121.7],
     "long":  [14.0, 23.5, 35.9],
 }
+# --- v2.1: フレームのパドルスロット（完成形 7354 準拠の横スロット） ---
+# 配置Bのバー（z 6.8〜9.5、幅 4.8）に上下 0.6 のクリアランスを加えた開口。
+# ブロック（羽根込み幅 8.7）はスロット幅 6.0 を通れないため保持が効く。
+PADDLE_SLOT_HW   = 3.0    # スロット半幅（タクト中心 ±3.0 → 幅 6.0）
+PADDLE_SLOT_Z0   = 6.2    # スロット下端（バー下端 6.8 - 0.6）
+PADDLE_SLOT_Z1   = 10.1   # スロット上端（バー上端 9.5 + 0.6）
+PADDLE_SLOT_X0   = 104.0  # スロット内側端 x（壁部中心に限定し内側は壁を残す）
+WIN_MERGE_GAP    = 3.0    # ボトム窓どうしの間隔がこれ未満なら連結する
+                          # （窓間に残る細い歯・孤立フィンの除去、v2.1）
+
+# --- v2.1: 階段壁の塊化 ---
+STAIR_WALL     = 2.2    # 階段ランごとの公称壁厚（キャビティ＝基板+0.5 から）
 
 # --- 開口（推定位置・要実物確認、v1 から不変） ---
 USB_XC   = 97.0         # USB開口中心 x（マイコン帯域 85..110 の中央付近）
@@ -102,11 +132,27 @@ TRRS_OFFSET = 55.0      # TRRS開口中心の「外側端から」の距離（�
 TRRS_W   = 9.0          # TRRS開口幅（y方向）
 TRRS_Z0, TRRS_Z1 = PCB_TOP + 0.45, PCB_TOP + 5.85   # ジャック中心 = 基板表面+3.0
 
-# --- アンダーグロー（本家アクリル層の代替案、v1 から不変） ---
-GLOW_ENABLE = True
-GLOW_T      = 1.0     # 帯部分の壁厚（推奨下限 0.8mm: ノズル0.4で2ペリメータ相当）
-GLOW_Z0     = 2.8     # 帯の下端 z（床上面 2.5 の少し上）
-GLOW_Z1     = 4.4     # 帯の上端 z（基板支持レッジ下端と一致）
+# --- アンダーグロー（v2.1 で側面バンドへ統合・廃止） ---
+# v1〜v2 の「壁を薄くする帯」は、v2.1 で独立パーツの側面バンド（白）に
+# 置き換えた。パラメータは下の BAND_* を参照。
+
+# --- v2.1: 側面バンド（白フィラメント、LED 光漏れ層。本家アクリル層相当） ---
+# 積層: 黒ボトムトレイ（床）→ 白バンド（z 2.5〜5.7 の外周リング）→ 基板 →
+# 黒プレート → 黒フレーム。外形はフレームと同一輪郭（階段の塊化を含む）で
+# 全周を一周する閉じたリングにする。
+BAND_T       = 1.2    # 薄壁部の壁厚（全周）。内側を inset(BAND_T) まで広げる。
+                      # 基板下面より下は中央の部品が壁に届かないため広げてよいが、
+                      # 背面はパドルブロック（x<=111）との間に 2.0 以上を確保
+                      # （背面内側は x≈113.0 になる）
+BAND_THIN_Z1 = LEDGE_Z0   # 薄壁部は床上面〜レッジ下端（4.4）まで。レッジ帯
+                      # （4.4〜5.7）はレッジ支持のため内側をキャビティ輪郭に保つ
+# 位置決め: バンド下面のスカート（リング状リブ）がトレイ上面の溝にはまる
+SKIRT_IN0    = 0.9    # スカート外側の inset（バンド壁 1.2 の内側に食い込ませて融合）
+SKIRT_IN1    = 1.7    # スカート内側の inset（スカート幅 0.8）
+SKIRT_DROP   = 0.6    # スカートの突出量（z 2.5 → 1.9）
+GROOVE_IN0   = 0.75   # トレイ溝の外側 inset
+GROOVE_IN1   = 1.85   # トレイ溝の内側 inset（溝幅 1.1、スカートと片側 0.15 隙間）
+GROOVE_DEPTH = 0.65   # 溝深さ（z 2.5 → 1.85、スカート底と 0.05 隙間）
 
 # --- ネジ計画 v2 ---
 # 背面締結（ケース同士）: 実測基板の背面縁はケース外形に 1.7〜2.9mm まで迫る
@@ -142,6 +188,9 @@ DROP_VOL    = 10.0      # mm3: これ未満の独立ソリッドは書き出し�
 FIN_EPS     = 0.15      # スイッチ穴がプレート外周にこれ未満の距離で接する場合、その穴の
                         # 周囲この量を外形から除いて開口を外形の notch として取り込む
                         # （フィン・接線接触による non-manifold 防止）
+FIN_EPS_OUT = 0.5       # v2.1: 角穴（スイッチ穴）については閾値を 0.5 に拡張し、
+                        # 穴〜外形間で 0.5 未満の材料（スリバー）を開口側に吸収する。
+                        # 横長スロットは従来どおり FIN_EPS（背面縁の notch 化を避ける）
 
 SIMPLIFY = 0.03  # 外形/ポケットの単純化トレランス（円弧の弦誤差として許容）
 
@@ -170,9 +219,181 @@ def inset(poly, d):   # 内側へ d
 def outset(poly, d, round_join=False):  # 外側へ d
     return largest(poly.buffer(d, join_style=1 if round_join else 2))
 
+# ============================= v2.1: 階段外形の量子化 =============================
+def quantize_stair(outline, pcb, half):
+    """階段外形を「ラン（踏面／蹴上）ごとの直線ブロック」に量子化する。
+
+    図面外形の階段は踏面・蹴上とも R≈1 のアークでつながるギザギザで、
+    内側のキャビティ（基板+0.5）との間の壁が typ. 1.6mm・最小 0.8mm の皮に
+    なる（v2 の stair 解析）。そこで各ランを 1 本の直線フェイスに置き換え、
+    キャビティ（pcb + CAV_CLR、クリップなし）から STAIR_WALL を確保する
+    位置までランごとに外形を押し出す（ラン内は最大値で統一）。
+    戻り値: (new_outline, report)  report はラン別の辞書リスト。
+    """
+    cav0 = largest(outset(pcb, CAV_CLR, round_join=True))
+    coords = [(float(x), float(y)) for x, y in outline.exterior.coords][:-1]
+    n = len(coords)
+
+    def seglen(i):
+        a, b = coords[i], coords[(i + 1) % n]
+        return math.hypot(b[0] - a[0], b[1] - a[1])
+
+    def kind_of(i):
+        a, b = coords[i], coords[(i + 1) % n]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        if abs(dx) >= 12 and abs(dy) <= 0.35:
+            return "T"   # 踏面（x 方向の長いラン）
+        if abs(dy) >= 2 and abs(dx) <= 0.35:
+            return "R"   # 蹴上（y 方向のラン）
+        return None
+
+    kinds = [kind_of(i) for i in range(n)]
+    # 候補ラン抽出: 同種の候補が短い非候補（アーク、合計 2.6mm まで）を
+    # 挟んでも同一ランとみなす
+    runs = []
+    i = 0
+    while i < n:
+        if kinds[i] is None:
+            i += 1
+            continue
+        kind = kinds[i]
+        j = i
+        gap = 0.0
+        last = i
+        while j + 1 < n:
+            nj = j + 1
+            if kinds[nj] == kind:
+                j = nj; last = nj; gap = 0.0
+            elif kinds[nj] is None and gap + seglen(nj) <= 2.6:
+                gap += seglen(nj); j = nj
+            else:
+                break
+        runs.append(dict(kind=kind, i0=i, i1=last))
+        i = last + 1
+    # ラン間ギャップ 2.6mm 以下・異種交互でチェーン化し、最長チェーンを階段とする
+    def gap_between(r1, r2):
+        return sum(seglen(k) for k in range(r1["i1"] + 1, r2["i0"]))
+    chains = []
+    for r in runs:
+        if (chains and chains[-1][-1]["kind"] != r["kind"]
+                and gap_between(chains[-1][-1], r) <= 2.6):
+            chains[-1].append(r)
+        else:
+            chains.append([r])
+    chain = max(chains, key=len)
+    # 背面エッジ等の長い垂直セグメントが両端に連結している場合は落とす
+    # （階段チェーンは踏面で始まり踏面で終わる）
+    while chain and chain[0]["kind"] == "R":
+        chain.pop(0)
+    while chain and chain[-1]["kind"] == "R":
+        chain.pop()
+    if len(chain) < 7:
+        raise RuntimeError(f"[{half}] stair chain not found (chains: {[len(c) for c in chains]})")
+    # ラン形状: コアセグメント（最長の候補セグメント）で代表させる
+    for r in chain:
+        segs = [(coords[k], coords[(k + 1) % n]) for k in range(r["i0"], r["i1"] + 1)]
+        if r["kind"] == "T":
+            core = max(segs, key=lambda s: abs(s[1][0] - s[0][0]))
+            r["fixed"] = (core[0][1] + core[1][1]) / 2
+        else:
+            core = max(segs, key=lambda s: abs(s[1][1] - s[0][1]))
+            r["fixed"] = (core[0][0] + core[1][0]) / 2
+        r["a"], r["b"] = core
+        mx, my = (core[0][0] + core[1][0]) / 2, (core[0][1] + core[1][1]) / 2
+        # 外向き符号: ラン中点から法線方向 0.8mm の点が外形の外ならそちらが外
+        if r["kind"] == "T":
+            r["out"] = -1 if outline.contains(Point(mx, my + 0.8)) else 1
+        else:
+            r["out"] = -1 if outline.contains(Point(mx + 0.8, my)) else 1
+        r["seg"] = LineString([r["a"], r["b"]])
+
+    def run_push(r):
+        """コアセグメント上のサンプル（両端 1.0mm のアーク帯を除く）で
+        キャビティまでの距離が STAIR_WALL になる押し出し量。"""
+        a, b = r["a"], r["b"]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        steps = max(2, int(L / 0.5))
+        need = 0.0
+        for s in range(steps + 1):
+            t = s / steps
+            if min(t, 1 - t) * L < 1.0:
+                continue
+            p = Point(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+            need = max(need, STAIR_WALL - p.distance(cav0))
+        return max(0.0, need)
+
+    pushes = [run_push(r) for r in chain]
+    s_pt = coords[chain[0]["i0"]]
+    e_pt = coords[(chain[-1]["i1"] + 1) % n]
+
+    def face_seg(idx, faces):
+        """押し出し後のフェイスセグメント（両端は隣接フェイス／チェーン端で決まる）。"""
+        r = chain[idx]
+        f = faces[idx]
+        if r["kind"] == "T":
+            xa = faces[idx - 1] if idx > 0 else s_pt[0]
+            xb = faces[idx + 1] if idx < len(chain) - 1 else e_pt[0]
+            return LineString([(xa, f), (xb, f)])
+        ya, yb = faces[idx - 1], faces[idx + 1]
+        return LineString([(f, ya), (f, yb)])
+
+    def face_wall(idx, faces):
+        """フェイスセグメント上（両端 1.2mm の継ぎ目帯を除く）の
+        キャビティまでの距離の最小値。"""
+        seg = face_seg(idx, faces)
+        L = seg.length
+        if L <= 2.4:
+            return 1e9
+        dmin = 1e9
+        s = 1.2
+        while s < L - 1.2:
+            dmin = min(dmin, seg.interpolate(s).distance(cav0))
+            s += 0.4
+        return dmin
+
+    new_outline = None
+    worst_d = 1e9
+    for _ in range(6):
+        faces = [r["fixed"] + r["out"] * p for r, p in zip(chain, pushes)]
+        rects = []
+        for idx, r in enumerate(chain):
+            f = faces[idx]
+            inner = r["fixed"] - r["out"] * 2.0   # 外形の内側へ 2.0 潜らせる
+            if r["kind"] == "T":
+                xa = faces[idx - 1] if idx > 0 else s_pt[0]
+                xb = faces[idx + 1] if idx < len(chain) - 1 else e_pt[0]
+                rects.append(Polygon([(min(xa, xb), min(f, inner)), (max(xa, xb), min(f, inner)),
+                                      (max(xa, xb), max(f, inner)), (min(xa, xb), max(f, inner))]))
+            else:
+                ya, yb = faces[idx - 1], faces[idx + 1]
+                rects.append(Polygon([(min(f, inner), min(ya, yb)), (max(f, inner), min(ya, yb)),
+                                      (max(f, inner), max(ya, yb)), (min(f, inner), max(ya, yb))]))
+        new_outline = largest(unary_union([outline] + rects))
+        # 検証: ランごとにフェイス上の壁厚を測り、不足するランだけ押し増す
+        walls = [face_wall(i, faces) for i in range(len(chain))]
+        worst_i = min(range(len(chain)), key=lambda i: walls[i])
+        worst_d = walls[worst_i]
+        if worst_d >= STAIR_WALL - 0.03:
+            break
+        pushes[worst_i] += (STAIR_WALL - worst_d) + 0.15
+    report = []
+    nt = nr = 0
+    for r, p in zip(chain, pushes):
+        if r["kind"] == "T":
+            nt += 1; name = f"T{nt}"
+        else:
+            nr += 1; name = f"R{nr}"
+        face = r["fixed"] + r["out"] * p
+        report.append(dict(name=name, kind=r["kind"], fixed=r["fixed"], out=r["out"],
+                           push=p, face=face))
+        print(f"[{half}] stair {name}: {'tread y' if r['kind'] == 'T' else 'riser x'} "
+              f"drawing={r['fixed']:.3f} out={r['out']:+d} push={p:.2f} -> face={face:.3f}")
+    print(f"[{half}] stair quantized: worst face wall (excl. joints) = {worst_d:.3f}")
+    return new_outline, report
+
 halves = {}
 for half in ("short", "long"):
-    outline = shp(loc(dxf["OUTLINE"][IDX[half]]["pts"], half)).simplify(SIMPLIFY)
+    outline_dxf = shp(loc(dxf["OUTLINE"][IDX[half]]["pts"], half)).simplify(SIMPLIFY)
     pocket  = shp(loc(dxf["POCKET"][IDX[half]]["pts"], half)).simplify(SIMPLIFY)
     sw_holes, slots = [], []
     for hp in dxf["SWITCH_HOLES"]:
@@ -189,8 +410,13 @@ for half in ("short", "long"):
                 sw_holes.append(dict(cx=c.x, cy=c.y, poly=poly))  # 中心は実測検証済み
     pcb_pts = np.loadtxt(f"{BASE}/template/pcb_outline2_{half}.csv", delimiter=",", skiprows=1)
     pcb = shp([tuple(r) for r in pcb_pts])
-    halves[half] = dict(outline=outline, pocket=pocket, sw=sw_holes, slots=slots, pcb=pcb)
-    print(f"[{half}] outline area={outline.area:.0f} pocket area={pocket.area:.0f} "
+    # v2.1: 階段外形をランごとのブロックに量子化（§17.3）。図面外形は
+    # outline_dxf として保持し、下流は量子化後の outline を使う。
+    outline, stair_report = quantize_stair(outline_dxf, pcb, half)
+    halves[half] = dict(outline=outline, outline_dxf=outline_dxf, pocket=pocket,
+                        sw=sw_holes, slots=slots, pcb=pcb, stair=stair_report)
+    print(f"[{half}] outline area={outline.area:.0f} (dxf {outline_dxf.area:.0f}) "
+          f"pocket area={pocket.area:.0f} "
           f"switch holes={len(sw_holes)} slots={len(slots)} pcb2 bbox={pcb.bounds}")
 
 # 基板ネジ穴候補（HIGH/MEDIUM のみ使う）
@@ -216,9 +442,22 @@ def merged_spans(half):
             out.append((a, b))
     return out
 
+def merge_close(spans, gap_max):
+    """間隔が gap_max 未満の区間を連結する（窓間の細い歯・孤立フィン除去用）。"""
+    out = []
+    for a, b in sorted(spans):
+        if out and a - out[-1][1] < gap_max:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
 for half in ("short", "long"):
     halves[half]["paddle_spans"] = merged_spans(half)
-    print(f"[{half}] paddle spans: {[(round(a,1), round(b,1)) for a,b in halves[half]['paddle_spans']]}")
+    # v2.1: ボトム窓専用に gap < WIN_MERGE_GAP の窓間を連結した区間も持つ
+    halves[half]["paddle_spans_bot"] = merge_close(halves[half]["paddle_spans"], WIN_MERGE_GAP)
+    print(f"[{half}] paddle spans: {[(round(a,1), round(b,1)) for a,b in halves[half]['paddle_spans']]} "
+          f"bottom windows: {[(round(a,1), round(b,1)) for a,b in halves[half]['paddle_spans_bot']]}")
 
 # ============================= 形状ヘルパ =============================
 def ring_pts(poly):
@@ -240,6 +479,11 @@ def box(x0, x1, y0, y1, z0, z1):
 def square_poly(cx, cy, size):
     h = size / 2
     return Polygon([(cx - h, cy - h), (cx + h, cy - h), (cx + h, cy + h), (cx - h, cy + h)])
+
+def ring_prism(poly_outer, poly_inner, z0, z1):
+    """輪郭2つに挟まれたリング状プリズム（スカート・溝用）。
+    内側プリズムは z を少しはみ出させて切り口をきれいにする。"""
+    return prism(poly_outer, z0, z1) - prism(poly_inner, z0 - 0.05, z1 + 0.05)
 
 # ============================= ネジ計画の確定 =============================
 def _line_max_x(poly, line):
@@ -358,6 +602,13 @@ def build_half(half):
     H = halves[half]
     outline, pocket, pcb = H["outline"], H["pocket"], H["pcb"]
     cavity = largest(outset(pcb, CAV_CLR, round_join=True).intersection(inset(outline, MIN_WALL)))
+    # フレーム下帯専用のキャビティ（MIN_WALL クリップなし基板+0.5 そのもの）。
+    # クリップ付き cavity は背面タブ先端など基板が外形に迫る箇所で基板側へ
+    # 食い込み、フレームと基板が干渉する（v2.1 初回チェックで 78.7mm3）。
+    # フレーム側は壁が消える箇所が出ても干渉ゼロを優先する（ボトム側は
+    # 従来どおりクリップ付き cavity で最小壁 0.8 を守る）。
+    cavity_full = largest(outset(pcb, CAV_CLR, round_join=True))
+    H["cavity_full"] = cavity_full
     # クリアランス実績の診断（基板輪郭を 0.5mm 刻みでサンプル）
     bnd = pcb.boundary
     samples = [bnd.interpolate(s).distance(cavity.boundary)
@@ -382,13 +633,23 @@ def build_half(half):
     trrs_y = (outer_end_y - TRRS_OFFSET) if half == "short" else (outer_end_y + TRRS_OFFSET)
 
     # ---------- スイッチプレート（別体） ----------
-    hole_polys = [square_poly(s["cx"], s["cy"], SW_HOLE_MODEL) for s in H["sw"]] + list(H["slots"])
-    fin_holes = [hp for hp in hole_polys if hp.boundary.distance(plate_bnd.boundary) < FIN_EPS]
+    sq_polys = [square_poly(s["cx"], s["cy"], SW_HOLE_MODEL) for s in H["sw"]]
+    hole_polys = sq_polys + list(H["slots"])
+    # フィン取り込み: 角穴は閾値 FIN_EPS_OUT=0.5（v2.1 で外形側にも拡張）、
+    # 横長スロットは従来どおり FIN_EPS=0.15。削り方は穴の全周バッファとする。
+    # 帯限定（穴∧外周の重なりだけ削る）も試したが、階段側の縁ストリップは
+    # 穴カットだけでも首部 0.5 未満で分離してしまう（無修正でも最終
+    # フットプリントが複数成分になることを確認済み）ため、一体に保てない
+    # ストリップは notch として開口側へ吸収するのが唯一の一貫した解になる。
+    fin_parts = [hp.buffer(FIN_EPS_OUT) for hp in sq_polys
+                 if hp.boundary.distance(plate_bnd.boundary) < FIN_EPS_OUT]
+    fin_parts += [hp.buffer(FIN_EPS) for hp in H["slots"]
+                  if hp.boundary.distance(plate_bnd.boundary) < FIN_EPS]
     plate_bnd_p = plate_bnd
-    if fin_holes:
-        moat = unary_union([h.buffer(FIN_EPS) for h in fin_holes])
+    if fin_parts:
+        moat = unary_union(fin_parts)
         plate_bnd_p = shp(ring_pts(largest(plate_bnd.difference(moat))))
-        print(f"[{half}] plate fin-fix: {len(fin_holes)} hole(s) near outline, "
+        print(f"[{half}] plate fin-fix: {len(fin_parts)} hole(s) near outline, "
               f"outline area {plate_bnd.area:.0f} -> {plate_bnd_p.area:.0f}")
     plate = prism(plate_bnd_p, PLATE_BOT, PLATE_TOP)
     for hp in hole_polys:
@@ -402,18 +663,28 @@ def build_half(half):
     # ---------- トップフレーム（枠） ----------
     ch = outset(plate_bnd, PLATE_CLR)     # プレート帯域の内壁
     well = outset(pocket, POCKET_CLR)     # 天面開口
+    # v2.1: 下帯（基板下面〜プレート下面）の内壁はキャビティ輪郭に合わせる。
+    # v2 ではプレート帯域（plate_bnd+0.25）が内壁で、キャビティ（基板+0.5）
+    # より内側に入る箇所があり基板と約1,559mm3 干渉した（背面帯で最大 6.2mm）。
+    # 使う輪郭はクリップなしの基板+0.5（cavity_full）で、基板との干渉を
+    # 完全になくす。プレート帯（PLATE_BOT〜PLATE_TOP）だけ従来の ch を使い、
+    # 境界は 0.05 重ねる。
     frame = (prism(outline, PCB_BOT, FRAME_TOP)
-             - prism(ch, PCB_BOT - 0.1, PLATE_TOP)
+             - prism(cavity_full, PCB_BOT - 0.1, PLATE_BOT + 0.05)
+             - prism(ch, PLATE_BOT - 0.05, PLATE_TOP)
              - prism(well, PLATE_TOP, FRAME_TOP + 0.1))
     # 背面締結のタッピング穴（サイズ別）
     for e in back_screws:
         spec = BACK_SCREW_SPECS[e["size"]]
         frame = frame - cyl(e["x"], e["y"], PCB_BOT - 0.1, spec["tap"], spec["tap_depth"] + 0.1)
-    # パドル通路（背面, 基板上面から天面まで全高で開ける。羽根込み幅 8.7 の
-    # ブロックが壁を乗り越える通り道。帯と帯の間の「歯」を残すと、両側を
-    # 切り取られて浮きソリッドになるため、フレーム側は帯全体を1区間で開ける）
-    span_all = (min(a for a, _ in H["paddle_spans"]), max(b for _, b in H["paddle_spans"]))
-    frame = frame - box(100.0, xmax + 1, span_all[0], span_all[1], PCB_BOT - 0.1, FRAME_TOP + 0.1)
+    # v2.1: パドル通路はタクト別の横スロットにする（完成形 7354 準拠）。
+    # 幅は中心 ±3.0、高さは配置B のバー（z 6.8〜9.5）+ 上下 0.6 で z 6.2〜10.1、
+    # x は内側端を 104 に留めて壁部中心に限定する。上壁（10.1〜16.1）・下壁・
+    # タクト間の歯が残るため、ブロック（幅 8.7）はスロット（幅 6.0）から
+    # 抜けず保持が効く。v2 の帯全高開放は廃止。
+    for tc in TACT_CENTERS[half]:
+        frame = frame - box(PADDLE_SLOT_X0, xmax + 1, tc - PADDLE_SLOT_HW, tc + PADDLE_SLOT_HW,
+                            PADDLE_SLOT_Z0, PADDLE_SLOT_Z1)
     # USB開口（外側端の壁）
     if half == "short":
         frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2, ymax - 1, ymax + 2, USB_Z0, USB_Z1)
@@ -422,33 +693,94 @@ def build_half(half):
     # TRRS開口（背面壁）
     frame = frame - box(xmax - 6.5, xmax + 1, trrs_y - TRRS_W / 2, trrs_y + TRRS_W / 2, TRRS_Z0, TRRS_Z1)
 
-    # ---------- ボトムケース ----------
-    bottom = prism(outline, 0, PCB_BOT) - prism(cavity, FLOOR_T, PCB_BOT + 0.1)
-    # アンダーグロー帯（壁を GLOW_T まで薄くする: 内腔を帯の高さだけ外へ広げる）
-    if GLOW_ENABLE:
-        bottom = bottom - prism(inset(outline, GLOW_T), GLOW_Z0, GLOW_Z1)
-    # 基板支持レッジ（キャビティ壁から基板縁の下へ LEDGE_UNDER 潜る帯。
-    # 外周はキャビティ壁の外へ食い込ませて融合させる）
-    ledge = (prism(outset(cavity, LEDGE_EMBED, round_join=True), LEDGE_Z0, PCB_BOT)
-             - prism(inset(pcb, LEDGE_UNDER), LEDGE_Z0 - 0.1, PCB_BOT + 0.1))
-    bottom = bottom + ledge
-    # パドル／タクト逃げ窓（背面, パドル帯は床から基板下面まで全て抜く。
-    # 裏面タクトのボタン（基板裏面-5.0）とパドルの巻き込み・羽根の逃げ）
-    for (sy0, sy1) in H["paddle_spans"]:
-        bottom = bottom - box(PADDLE_WIN_X0, xmax + 1, sy0, sy1, -0.1, PCB_BOT)
-    # ネジ通し穴＋頭ザグリ（背面締結はサイズ別、吊りボスは M3）
+    # ---------- ネジ一覧（トレイ・バンド共通） ----------
     all_screws = [(e["x"], e["y"], BACK_SCREW_SPECS[e["size"]]) for e in back_screws]
     all_screws += [(e["x"], e["y"], BACK_SCREW_SPECS["M3"]) for e in hangs]
+
+    # ---------- ボトムトレイ（黒、浅いトレイ: 床＋内側の造形） ----------
+    tray = prism(outline, 0, FLOOR_T)
+    # 位置決め溝（バンド下面のスカートを受ける、全周）
+    tray = tray - ring_prism(inset(outline, GROOVE_IN0), inset(outline, GROOVE_IN1),
+                             FLOOR_T - GROOVE_DEPTH, FLOOR_T + 0.05)
+    # パドル窓の床部分（バンド側と共通の帯を抜く）
+    for (sy0, sy1) in H["paddle_spans_bot"]:
+        tray = tray - box(PADDLE_WIN_X0, xmax + 1, sy0, sy1, -0.1, FLOOR_T + 0.1)
+    # ネジ通し穴＋頭ザグリ（床の分。バンド帯域の逃げはバンド側で切る）
     for (sx, sy, spec) in all_screws:
-        bottom = bottom - cyl(sx, sy, -0.1, spec["clr"], PCB_BOT + 0.2)
-        bottom = bottom - cyl(sx, sy, -0.1, spec["cb"], CB_DEPTH + 0.1)
+        tray = tray - cyl(sx, sy, -0.1, spec["clr"], FLOOR_T + 0.2)
+        tray = tray - cyl(sx, sy, -0.1, spec["cb"], CB_DEPTH + 0.1)
     # ゴム足逃げ
     for (fx, fy, _) in all_screws:
-        bottom = bottom - cyl(fx, fy, -0.1, 11.0, 1.0)
+        tray = tray - cyl(fx, fy, -0.1, 11.0, 1.0)
     for (fx, fy) in FEET_EXTRA[half]:
-        bottom = bottom - cyl(fx, fy, -0.1, 11.0, 1.0)
+        tray = tray - cyl(fx, fy, -0.1, 11.0, 1.0)
 
-    return dict(plate=plate, frame=frame, bottom=bottom)
+    # ---------- 側面バンド（白、z 2.5〜5.7 の全周リング） ----------
+    band = prism(outline, FLOOR_T, PCB_BOT)
+    # 薄壁部（光漏れ、全周）: 床上面〜レッジ下端は内側を inset(BAND_T) まで広げる
+    band = band - prism(inset(outline, BAND_T), FLOOR_T - 0.1, BAND_THIN_Z1)
+    # レッジ帯（4.4〜5.7）: 内側はキャビティ輪郭（レッジを支える壁を残す）
+    band = band - prism(cavity, BAND_THIN_Z1, PCB_BOT + 0.1)
+    # 基板支持レッジ（キャビティ壁から基板縁の下へ LEDGE_UNDER 潜る帯。
+    # 外周はキャビティ壁の外へ食い込ませて融合させる。従来はボトム側だった）
+    ledge = (prism(outset(cavity, LEDGE_EMBED, round_join=True), LEDGE_Z0, PCB_BOT)
+             - prism(inset(pcb, LEDGE_UNDER), LEDGE_Z0 - 0.1, PCB_BOT + 0.1))
+    band = band + ledge
+    # 位置決めスカート（下面のリング状リブ、トレイの溝にはまる）
+    band = band + ring_prism(inset(outline, SKIRT_IN0), inset(outline, SKIRT_IN1),
+                             FLOOR_T - SKIRT_DROP, FLOOR_T + 0.3)
+    # パドル窓（トレイと共通の帯。スカートもろとも抜く）
+    for (sy0, sy1) in H["paddle_spans_bot"]:
+        band = band - box(PADDLE_WIN_X0, xmax + 1, sy0, sy1,
+                          FLOOR_T - SKIRT_DROP - 0.1, PCB_BOT + 0.1)
+    # 背面ネジの逃げ（バンド帯域分。吊りボス用ネジは内側の空間を通るので不要）
+    for e in back_screws:
+        spec = BACK_SCREW_SPECS[e["size"]]
+        band = band - cyl(e["x"], e["y"], FLOOR_T - SKIRT_DROP - 0.1,
+                          spec["clr"], PCB_BOT - FLOOR_T + SKIRT_DROP + 0.2)
+    # v2.1: パドル窓端フィン対策。窓端と背面ネジの間では、壁（外形−キャビティ）
+    # とレッジが「窓／基板タブ角／ネジ穴」に囲まれたポケットに残片として
+    # 取り残され、最薄約0.1mm のフィンになる（short: 窓端 y=126.65 と
+    # M3 (110.24,129) の間、実測 x 105.5〜108.7 / y 126.7〜129.1 / z 3.5〜5.3）。
+    # 対策はポケットの広さで分ける:
+    #   - 壁領域が広い場合（long の窓始端側など）は、壁領域の範囲内で
+    #     床上面〜壁天端まで埋め直すウェブで一体化させる。
+    #   - 壁領域が 5mm2 未満までピンチしている場合はウェブでは届かないため、
+    #     フィンごと切り取る（窓の開口が壁側に最大で約 3mm 延びるだけで、
+    #     パドル羽根の到達範囲の外なので機能影響はない）。
+    # ネジ通し穴からはウェブ側で clr/2 + 0.9 を確保する。
+    wall2d = outline.difference(cavity)
+    for e in back_screws:
+        spec = BACK_SCREW_SPECS[e["size"]]
+        keep = Point(e["x"], e["y"]).buffer(spec["clr"] / 2 + 0.9)
+        for (a, b) in H["paddle_spans_bot"]:
+            for end in (a, b):
+                if abs(e["y"] - end) > 6.0:
+                    continue
+                sgn = 1 if e["y"] > end else -1
+                wy0, wy1 = (end, e["y"] + 2.8) if sgn > 0 else (e["y"] - 2.8, end)
+                rect = Polygon([(104.5, wy0), (e["x"] + 3.0, wy0),
+                                (e["x"] + 3.0, wy1), (104.5, wy1)])
+                web = rect.intersection(wall2d).difference(keep)
+                if web.area < 5.0:
+                    # 到達範囲はネジ中心 ±1.35: ノッチ角ではスカート（バンド
+                    # 下面のリブ）のアーク部がこの切り取りで孤立残片になる
+                    # ため、残片（実測で +0.75 では y 130.03 まで残った）ごと除く
+                    cy0, cy1 = (end - 0.1, e["y"] + 1.35) if sgn > 0 else (e["y"] - 1.35, end + 0.1)
+                    crect = Polygon([(104.5, cy0), (e["x"] + 0.3, cy0),
+                                     (e["x"] + 0.3, cy1), (104.5, cy1)])
+                    band = band - prism(crect, FLOOR_T - SKIRT_DROP - 0.1, PCB_BOT + 0.05)
+                    print(f"[{half}] fin cut: screw ({e['x']:.2f},{e['y']:.0f}) "
+                          f"span end {end:.2f} (web area {web.area:.1f} < 5)")
+                else:
+                    geoms = [web] if web.geom_type == "Polygon" else list(getattr(web, "geoms", []))
+                    for g in geoms:
+                        if g.area > 1.0:
+                            band = band + prism(g, FLOOR_T, PCB_BOT)
+                            print(f"[{half}] fin web: screw ({e['x']:.2f},{e['y']:.0f}) "
+                                  f"span end {end:.2f} area={g.area:.1f}")
+
+    return dict(plate=plate, frame=frame, tray=tray, band=band)
 
 def fuse_solids(solids):
     out = solids[0]
@@ -499,28 +831,6 @@ def clip(part, xr, yr):
         raise RuntimeError("clip produced no solid")
     return fuse_solids(solids)
 
-def trial_compose(pieces, xr, yr, name):
-    """積層試作片: 各パーツの切り出しを重ねて融合する。
-    面接触だけでは融合しない場合は、フレームを -0.05 / プレートを +0.05 に
-    ずらして体積的に重ねてから融合し直す（試作片の当たり確認には影響しない量）。
-    pieces: [(part, nudge_z), ...]"""
-    fused = None
-    for use_nudge in (False, True):
-        solids = []
-        for part, nz in pieces:
-            c = clip(part, xr, yr)
-            if use_nudge and nz:
-                c = c.moved(bd.Location((0, 0, nz)))
-            solids.extend(c.solids())
-        kept = [s for s in solids if s.volume >= DROP_VOL]
-        fused = fuse_solids(kept)
-        if len(fused.solids()) == 1:
-            if use_nudge:
-                print(f"  [trial] {name}: fused with z-nudge")
-            return fused
-    print(f"  [trial] {name}: WARNING still {len(fused.solids())} solids")
-    return fused
-
 results = {}
 for half in ("short", "long"):
     print(f"===== build {half} =====")
@@ -528,33 +838,34 @@ for half in ("short", "long"):
     results[half] = parts
     export(parts["plate"], f"switch_plate_{half}")
     export(parts["frame"], f"top_frame_{half}")
-    export(parts["bottom"], f"bottom_case_{half}")
+    export(parts["tray"], f"bottom_tray_{half}")
+    export(parts["band"], f"side_band_{half}")
 
-# ============================= 試作片 =============================
-# 1) 階段境界（両半分）: 階段側 50mm 帯をフル積層で切り出し（新キャビティの当たり確認）
+# ============================= 試作片（1回の印刷セッションに集約） =============================
+# 方針（v2.1 後半の本人指示）: 試作回数を最小化する。必須の確認だけを
+# A1 mini のベッドに同時配置できる小片セットにする（全9片）:
+#   - プレート穴のパチ留め: trial_plate_holes（小片1枚）
+#   - 階段の当たり: trial_stair_band_<half>（バンドのクリップ。バンドは
+#     基板を受けるレッジと階段外形の両方を持つので、これで当たりが分かる。
+#     トレイは基板に触れないため不要、フレーム側は仮想検証で干渉0を確認済み）
+#   - パドルスロット: trial_corner_{tray,band,frame}_<half>（両半分。
+#     手で重ねてパドルの挿入・保持・タクト逃げを見る。long はタクト1の
+#     ブロック角が仮想で壁に近いため特に確認対象）
+# ネジまわりの試作片（旧 trial_screw）は、ネジ経路を仮想検証で確認する
+# ことにして廃止した。積層クリップ（旧 trial_compose）も廃止し、
+# 全てパーツ別クリップとする。
+
+# 1) 階段境界（両半分）: バンドだけを切り出す
 for half, yr in (("short", (-3, 50)), ("long", (127.2, 180.2))):
+    export(clip(results[half]["band"], (-3, 117.3), yr), f"trial_stair_band_{half}")
+
+# 2) 背面-外側角（両半分）: トレイ／バンド／フレームを別々に切り出す
+for half, yr in (("short", (80, 146.4)), ("long", (-3, 50))):
     P = results[half]
-    comp = trial_compose([(P["bottom"], 0.0), (P["plate"], 0.05), (P["frame"], -0.05)],
-                         (-3, 117.3), yr, f"trial_stair_{half}")
-    export(comp, f"trial_stair_{half}")
+    for pname in ("tray", "band", "frame"):
+        export(clip(P[pname], (80, 117.3), yr), f"trial_corner_{pname}_{half}")
 
-# 2) 背面-外側角（short）: パドルポケット×3 + タクト窓 + TRRS開口 + USB開口
-P = results["short"]
-comp = trial_compose([(P["bottom"], 0.0), (P["frame"], -0.05)],
-                     (80, 117.3), (80, 146.4), "trial_corner_short")
-export(comp, "trial_corner_short")
-
-# 3) ネジまわり（v2 計画の確認）: 背面リム締結 + 吊りボス候補帯をフル積層で切り出し
-P = results["short"]
-comp = trial_compose([(P["bottom"], 0.0), (P["plate"], 0.05), (P["frame"], -0.05)],
-                     (-3, 117.3), (118, 146.4), "trial_screw_short")
-export(comp, "trial_screw_short")
-P = results["long"]
-comp = trial_compose([(P["bottom"], 0.0), (P["plate"], 0.05), (P["frame"], -0.05)],
-                     (-3, 117.3), (100, 180.2), "trial_screw_long")
-export(comp, "trial_screw_long")
-
-# 4) プレート穴のパチ留め確認片（新規）: 実寸の穴 2x2（ピッチ 19.05）だけの小片。
+# 3) プレート穴のパチ留め確認片: 実寸の穴 2x2（ピッチ 19.05）だけの小片。
 #    厚みは実プレートと同じ 1.5。スイッチを差して保持されるかだけを見る。
 tp = box(0, 47.6, 0, 38.1, 0, PLATE_T)
 for hx in (14.275, 33.325):
