@@ -117,6 +117,15 @@ PLATE_CLR      = 0.25   # プレート外周とフレーム内壁の隙間
 POCKET_CLR     = 0.25   # フレーム天面開口（ポケット）への追加クリアランス
 PLATE_CAP_INSET = 2.25  # プレート外周の上限（外形からの inset、v1 の WALL-0.35 相当）
 
+# --- v2.4.1: プレート階段縁のブリッジ（§17.14、本人目視指摘） ---
+PLATE_BRIDGE       = True
+PLATE_BRIDGE_CLR   = 0.2   # 階段側の上限: フレーム下帯内壁（cavity_full）
+                           # から最低この隙間を残す範囲まで広げてよい
+PLATE_BRIDGE_GUARD = 0.5   # ケース外形の内側に収めるための最小ガード
+                           # （階段側の実質的な上限は cavity_full 側で決まる）
+PLATE_BRIDGE_STRIP = 15.0  # 基板階段プロファイルからこの距離の帯の中だけで
+                           # ブリッジを効かせる（階段側以外は変えない）
+
 # --- スイッチプレート穴（v2 で変更） ---
 SW_HOLE        = 14.0   # MX プレートパチ留め標準（mm角）
 SW_HOLE_FDM    = 0.15   # FDM 印刷補正（穴は小さく出るためモデル側で拡大）
@@ -531,6 +540,17 @@ def seam_stair(outline_q, pcb, half):
     print(f"[{half}] seam outline: area {outline_q.area:.0f} -> {new_outline.area:.0f}")
     return new_outline, report, chain
 
+def stair_profile_line(half):
+    """基板階段プロファイル（踏面＋蹴上を交互に辿る折れ線、make_outline3
+    の STEPS が正本）。プレートのブリッジ帯（§17.14）の基準線。"""
+    steps = PCB_STEPS[half]                    # [(x0, level)] x 6段
+    pts = [(steps[0][0], steps[0][1])]
+    for i in range(1, len(steps)):
+        pts.append((steps[i][0], steps[i - 1][1]))   # 蹴上（x 一定で段差）
+        pts.append((steps[i][0], steps[i][1]))       # 次の踏面
+    pts.append((PCB_XB, steps[-1][1]))
+    return LineString(pts)
+
 def bridge_stair(poly, chain, disks=(), label=""):
     """階段側の輪郭をランごとの直線フェイスに寄せる（v2.2、§17.11）。
 
@@ -882,6 +902,34 @@ def build_half(half):
     if ears:
         plate_bnd = largest(unary_union([plate_bnd] + ears))
     H["plate_bnd"] = plate_bnd
+
+    # ---------- v2.4.1: プレート階段縁のブリッジ（§17.14、本人目視指摘） ----------
+    # プレート外周はポケット（スイッチ配置）の歯形に沿うため、階段列の穴
+    # では縁が内側へ入り込んで穴の縁サポートが不足する。さらに穴が外周
+    # 0.5mm 以内に近づくと fin-fix が穴全周に 0.5mm の堀（moat）を切り、
+    # 角付近の材料まで失われる（リングテストで short (36.6,9.3) が 8/24、
+    # §17.14）。対策として階段側の湾を橋渡しする。階段側で追加して
+    # よい上限は、外形キャップ（PLATE_CAP_INSET）ではなくフレーム
+    # 下帯内壁（cavity_full）から PLATE_BRIDGE_CLR の隙間を残す範囲
+    # とする（欠陥方向では外形キャップ側が先に効いており、基板+0.5
+    # 基準の方が実際の壁の余裕を正しく表すため。ケース内に収める
+    # ための最小ガードとして inset(outline, PLATE_BRIDGE_GUARD) は
+    # 残す）。効かせる帯は基板階段プロファイルから PLATE_BRIDGE_STRIP
+    # 以内に限定する（階段側以外・既存の外周は変えない）。ネジ計画
+    # （背面ネジ／吊りボス）は変更前の外周で確定済みで、v2.4 と同一に保つ。
+    if PLATE_BRIDGE:
+        strip = stair_profile_line(half).buffer(PLATE_BRIDGE_STRIP) \
+                                          .intersection(outline)
+        allow = inset(cavity_full, PLATE_BRIDGE_CLR) \
+            .intersection(inset(outline, PLATE_BRIDGE_GUARD))
+        fill = allow.intersection(strip).difference(plate_bnd)
+        if not fill.is_empty and fill.area > 0:
+            merged = unary_union([plate_bnd, fill])
+            plate_bnd = largest(merged)
+            H["plate_bnd"] = plate_bnd
+            print(f"[{half}] plate bridge: fill area={fill.area:.1f} mm2 "
+                  f"(dropped by largest: {merged.area - plate_bnd.area:.2f}) "
+                  f"plate outline area -> {plate_bnd.area:.0f}")
     xmax = outline.bounds[2]
     ymax = outline.bounds[3]
     trrs_y = TRRS_Y[half]
