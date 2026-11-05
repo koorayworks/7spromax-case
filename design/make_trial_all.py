@@ -1,25 +1,45 @@
 #!/usr/bin/env python3
-"""trial_all_v22.stl を作り直す: 試作9ファイル（11ピース）を
-180x180 ベッド内に再レイアウトした統合 STL。
+"""試作ピース一式を 180x180 ベッド内に再レイアウトした統合 STL を
+作り直す。
 
-レイアウトは v2.2 版 trial_all（design/v22_backup/）の配置スロットを
-再利用する: クリップ範囲が同じなので各ピースの外形寸法はほぼ同一で、
-(w, d, z高さ) でスロットと新ピースを対応付け、回転・平行移動だけを
-コピーする。各ピースの体積一致・ベッド内・間隔 3mm 以上・z=0 着座・
-watertight を検証してから書き出す。
+構成（v2.4.11／§17.25）: 全 20 ピースを 2 ファイルに分割する。
+  - trial_all_1.stl: short 系 7 ピース＋プランジャ 3 個（計 10）
+  - trial_all_2.stl: long 系 7 ピース＋プランジャ 3 個（計 10）
+各系の内訳は、階段バンド 1＋角ピース（トレイ／バンド／フレーム）3
+＋TRRS ピース（トレイ／バンド／フレーム）3 ＝ 7。
+スイッチ穴ピース（trial_plate_holes）はパチ留め確認済みのため
+本人の指示で除外した。
+
+分割の理由: 従来の単一 trial_all_v22.stl は ASCII 変換後に
+約 5.68MB となり、GitHub push（push-files）のサイズ上限
+（HTTP 413）に当たったため。各ファイルは ASCII で 4MB 以下を
+目安に、系ごとに分けた（プランジャは 3 個ずつ分散）。
+
+配置は MaxRects（空き矩形のベストフィット分割）で、ピース間隔
+3mm 以上・ベッド内・z=0 着座・watertight を検証してから書き出す。
 """
 import numpy as np
 import trimesh
 from shapely.geometry import Polygon
 
 BASE = "/home/hatch/workspace/7spromax-case/design"
-FILES = ["trial_plate_holes",
-         "trial_stair_band_short", "trial_stair_band_long",
-         "trial_corner_tray_short", "trial_corner_band_short",
-         "trial_corner_frame_short",
-         "trial_corner_tray_long", "trial_corner_band_long",
-         "trial_corner_frame_long"]
 BED = 180.0
+# 予約間隔は公称 3.0 に浮動小数点・ハル計算の余裕 0.05 を足した値に
+# する（検証は実測で 3.0 以上を要求）。
+GAP = 3.05
+
+GROUPS = {
+    "trial_all_1": (["trial_stair_band_short",
+                     "trial_corner_tray_short", "trial_corner_band_short",
+                     "trial_corner_frame_short",
+                     "trial_trrs_tray_short", "trial_trrs_band_short",
+                     "trial_trrs_frame_short"], 3),
+    "trial_all_2": (["trial_stair_band_long",
+                     "trial_corner_tray_long", "trial_corner_band_long",
+                     "trial_corner_frame_long",
+                     "trial_trrs_tray_long", "trial_trrs_band_long",
+                     "trial_trrs_frame_long"], 3),
+}
 
 
 def load_solids(path):
@@ -34,12 +54,6 @@ def load_solids(path):
     return [s for s in solids if s.volume > 1.0]
 
 
-def key_of(mesh):
-    b = mesh.bounds
-    return (round(b[1, 0] - b[0, 0]), round(b[1, 1] - b[0, 1]),
-            round(b[1, 2] - b[0, 2]))
-
-
 def footprint(mesh):
     v = mesh.vertices
     pts = np.unique(v[:, :2], axis=0)
@@ -52,28 +66,8 @@ def footprint(mesh):
     return Polygon(pts[hull.vertices])
 
 
-def main():
-    pieces = []
-    for name in FILES:
-        for i, s in enumerate(load_solids(f"{BASE}/{name}.stl")):
-            pieces.append((f"{name}#{i}", s))
-    # v2.4.5 (§17.19): プランジャ（小ボタン）を 6 個追加する
-    # （左右 3 タクトずつ、共通部品 plunger.stl の複製）。
-    plungers = load_solids(f"{BASE}/plunger.stl")
-    assert len(plungers) == 1, f"plunger.stl solids: {len(plungers)}"
-    for i in range(6):
-        pieces.append((f"plunger#{i}", plungers[0].copy()))
-    print(f"{len(pieces)} pieces")
-    # v2.4.4: v2.2 スロット再利用はバンド角フラグメントの寸法変化
-    # （窓位置の移動）で破綻したため、棚置きパッキングに切り替えた。
-    # bbox 矩形で棚（行）に並べ、行内・行間とも 3mm 以上の間隔を
-    # 空ける。配置後の検証（体積・watertight・間隔・ベッド内）は従来
-    # どおり下流のアサーションで行う。
-    # v2.4.10 (§17.24): 階段バンド long の奥行き増（51.5）で棚置き
-    # グリーディが溢れたため、MaxRects（空き矩形のベストフィット
-    # 分割）に変更。ピース間隔は各ピースを GAP 分膨らませて確保する
-    # （ベッド端だけは実寸で判定）。
-    GAP = 3.0
+def pack(pieces):
+    """MaxRects で配置し、[(label, mesh, footprint)] を返す。"""
     items = []
     for label, s in pieces:
         b = s.bounds
@@ -137,33 +131,59 @@ def main():
     mind = 1e9
     for i in range(len(placed)):
         for j in range(i + 1, len(placed)):
-            mind = min(mind, placed[i][2].distance(placed[j][2]))
+            dij = placed[i][2].distance(placed[j][2])
+            if dij < 3.0:
+                print(f"  gap {dij:.3f} < 3.0: {placed[i][0]} vs {placed[j][0]}")
+            mind = min(mind, dij)
     print(f"min gap between pieces: {mind:.2f}")
     assert mind >= 3.0
-    allm = trimesh.util.concatenate([m for _, m, _ in placed])
-    bb = allm.bounds
-    print(f"combined bbox x[{bb[0,0]:.1f},{bb[1,0]:.1f}] "
-          f"y[{bb[0,1]:.1f},{bb[1,1]:.1f}] z[{bb[0,2]:.2f},{bb[1,2]:.1f}]")
-    assert bb[0, 0] >= 0 and bb[0, 1] >= 0
-    assert bb[1, 0] <= BED and bb[1, 1] <= BED
-    assert abs(bb[0, 2]) < 1e-6
-    allm.export(f"{BASE}/trial_all_v22.stl")
-    print("saved trial_all_v22.stl")
+    return placed
+
+
+def main():
+    plungers = load_solids(f"{BASE}/plunger.stl")
+    assert len(plungers) == 1, f"plunger.stl solids: {len(plungers)}"
+    all_placed = {}
+    for out_name, (files, n_plunger) in GROUPS.items():
+        pieces = []
+        for name in files:
+            for i, s in enumerate(load_solids(f"{BASE}/{name}.stl")):
+                pieces.append((f"{name}#{i}", s))
+        for i in range(n_plunger):
+            pieces.append((f"plunger#{i}", plungers[0].copy()))
+        print(f"== {out_name}: {len(pieces)} pieces")
+        placed = pack(pieces)
+        allm = trimesh.util.concatenate([m for _, m, _ in placed])
+        bb = allm.bounds
+        print(f"combined bbox x[{bb[0,0]:.1f},{bb[1,0]:.1f}] "
+              f"y[{bb[0,1]:.1f},{bb[1,1]:.1f}] z[{bb[0,2]:.2f},{bb[1,2]:.1f}]")
+        assert bb[0, 0] >= 0 and bb[0, 1] >= 0
+        assert bb[1, 0] <= BED and bb[1, 1] <= BED
+        assert abs(bb[0, 2]) < 1e-6
+        path = f"{BASE}/{out_name}.stl"
+        allm.export(path)
+        import os
+        print(f"saved {path} ({os.path.getsize(path)} bytes)")
+        all_placed[out_name] = placed
+    # ガイド図: 2 ファイル分の配置を並べて描く
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(9, 9))
-    for label, m, fp in placed:
-        xs, ys = np.array(fp.exterior.coords).T
-        ax.plot(xs, ys, lw=0.9)
-        c = fp.centroid
-        ax.text(c.x, c.y, label.replace("_", "\n").replace("#", " #"),
-                ha="center", va="center", fontsize=6)
-    ax.set_xlim(0, BED)
-    ax.set_ylim(0, BED)
-    ax.set_aspect("equal")
-    ax.grid(alpha=0.25)
-    ax.set_title("trial_all_v22 layout (v2.4 pieces, v2.2 arrangement)")
+    fig, axes = plt.subplots(1, 2, figsize=(15, 7.5))
+    for ax, (out_name, placed) in zip(axes, all_placed.items()):
+        for label, m, fp in placed:
+            xs, ys = np.array(fp.exterior.coords).T
+            ax.plot(xs, ys, lw=0.9)
+            c = fp.centroid
+            ax.text(c.x, c.y, label.replace("_", "\n").replace("#", " #"),
+                    ha="center", va="center", fontsize=6)
+        ax.set_xlim(0, BED)
+        ax.set_ylim(0, BED)
+        ax.set_aspect("equal")
+        ax.grid(alpha=0.25)
+        ax.set_title(f"{out_name}.stl ({len(placed)} pieces)")
+    fig.suptitle("trial_all layout (v2.4.11: split into 2 files, "
+                 "20 pieces total, no plate-holes piece)")
     fig.tight_layout()
     fig.savefig(f"{BASE}/guide_trial_all_v22.png", dpi=110)
     print("saved guide_trial_all_v22.png")
