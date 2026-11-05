@@ -58,11 +58,30 @@ BAND = 45.0                  # fill band depth (covers deepest spike ~32)
 #         84.4 / 65.2 / 46.2 / 26.6 (tab tread 19.6 -> 16.0).
 # Levels (depth direction) are NOT covered by those measurements and
 # are unchanged.
+# 2026-11-06 correction (§17.24): the long tread-5 level (the L21
+# tooth, x 85.4..103.4) was re-derived from the underside flatbed
+# scan 7346.  The strict profile measurement of §17.23 F (dome
+# centroid fit) puts the real tread at ~176.0, not 171.6: the old
+# value came from anchor A (an outline2 envelope artefact) and made
+# the cavity ~4.4 mm too small on this tooth alone (every other
+# tread agrees with the scan within +/-0.5).  Cross-checks: L21
+# centre->edge ~8.4 mm on the scan (167.52 + 8.4 = 175.9); the
+# official DXF case outline has the same tooth at 177.2, i.e. the
+# PCB level is ~176.1 with the usual -1.1 inset; an independent
+# channel-profile read of scan 7346 (step23b, short half as control:
+# all 6 segments fit within 0.15 mm) puts this tooth's segment
+# ~4.9 mm deeper than the 171.6 prediction and within ~0.6 mm of
+# 176.0.  The riser at the tooth's left end is 85.4 per the scan
+# fit (the 2026-11-05 caliper chain gave 86.2; the scan value is
+# adopted because modelling the riser at 86.2 would risk hard
+# interference if the scan is right, while 85.4 only costs a
+# little riser clearance).  The landing beyond x=103.4 stays at
+# 170.80 (scan ~170.5, within tolerance).
 STEPS = {
     "short": [(3.2, 11.00), (29.4, 0.65), (45.4, 10.25), (64.4, 14.93),
               (83.4, 24.46), (103.4, 29.98)],
     "long":  [(3.2, 160.05), (26.0, 152.73), (48.0, 162.25),
-              (67.1, 166.90), (86.2, 171.60), (103.4, 170.80)],
+              (67.1, 166.90), (85.4, 176.00), (103.4, 170.80)],
 }
 
 
@@ -237,4 +256,14 @@ def main():
 
 
 if __name__ == "__main__":
+    # WARNING (§17.24): the shipped pcb_outline3_*.csv in this folder
+    # are the canonical inputs to the case build, and re-running this
+    # script does NOT reproduce them (the current code path yields
+    # denser rings, 114 pts vs the shipped 45/61, with ~0.8% area
+    # differences over the whole outline -- the shipped CSVs predate
+    # a generation-path change).  Do not regenerate the CSVs from
+    # this script without re-validating the whole case; edit the
+    # shipped CSVs in place instead, as was done for the §17.24
+    # tread-5 correction (STEPS above is still the canonical table
+    # for the seam shaping in build_case.py).
     main()

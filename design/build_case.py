@@ -120,6 +120,15 @@ STAIR_ZONE_PAD = 3.2    # 拡大帯: 階段プロファイル線からこの距�
                         # （stair_strip との和集合を取る）
 LEDGE_UNDER    = 1.5    # 基板支持レッジが基板縁の下へ潜る量
 LEDGE_EMBED    = 0.3    # レッジ外周をキャビティ壁側へ食い込ませる量（融合確保）
+# --- v2.4.9 (§17.23): レッジ×キーソケット干渉の局所切り欠き ---
+# 基板裏の Kailh ソケットはふち近くでレッジ帯（z 4.4〜5.7、潜り
+# 1.5mm）と重なる（check_socket_ledge.py で全数確認、§17.23）。
+# 包絡は裏面スキャン実測（金属接点 Δ(+4.4,+6.5)/(+5.3,-6.4)）に
+# 基づく A と、写真 bbox 由来の攻撃形 B の和集合・両向き:
+#   バー x 0.75〜7.5 / y ±9.7（A: 1.5〜7.5 / ±7.8）＋ドーム半径 2.75。
+# 重なるソケットだけ、包絡を SOCK_NOTCH_PAD 膨らませてレッジ帯を
+# 切り欠く（階段クリアランス・壁厚には触らない）。
+SOCK_NOTCH_PAD = 0.3    # 切り欠きの膨らみ（印刷・実装ばらつき吸収）
 LEDGE_Z0       = 4.4    # レッジ下端（グロー帯上端と一致させ干渉を避ける）
 
 # --- プレート外周・フレーム内壁（v1 から不変） ---
@@ -266,6 +275,11 @@ TACT_NOTCH_HW  = 4.0    # ノッチ半幅（タクト中心 ±4.0。幅 6.0＋�
 # 14.0 角＋0.3 余裕の箱でフレーム下帯（z 5.7〜9.55）とバンドレッジ帯
 # （z 4.4〜5.7）を局所的に切り欠く。外形フェイス自体は変えない
 # （箱は実在材料の範囲でのみ効く）。
+# v2.4.10 (§17.24): 踏面の前提自体が誤りだった（実基板 176.0）と
+# 是正され、占有域は歯の内側に収まった。現行輪郭ではこの箱は
+# フレーム／バンドとも実在材料と交わらず（除去量 0.0mm3 を実測）、
+# ノッチは無効化されている。将来輪郭が変わった場合の保険として
+# コードは残す。
 L21_CX, L21_CY = 93.70, 167.52   # L21 中心（DXF 穴中心、§17.20）
 L21_NOTCH_HALF = 7.15            # ノッチ半幅（14.3 角相当 = 14.0 + 全幅 0.3 余裕）
 L21_FRAME_Z1   = 11.0            # フレーム側ノッチ上端（= PLATE_TOP）。
@@ -328,15 +342,36 @@ MCU_POCKET_X0, MCU_POCKET_X1 = 83.0, 105.0   # ポケット x 範囲
 MCU_POCKET_LEN = 38.0   # ポケットの端からの長さ（y方向）
 MCU_POCKET_FLOOR = 0.3  # ポケット床の残し厚
 MCU_DEEP_LEN   = 13.0   # 端寄りの貫通帯の長さ（コネクタ逃げ）
-# TRRS: v2.4.4 (§17.18) で本人の実物写真注記により再是正。旧値は
-# ジャックのピン列（はんだピン位置）であって軸ではなかった。
-# long: 写真 7465 の 91.2（階段端 171.6 から中心まで）＋画素計測
-# （中心 y≈80.1）で軸 80.3。short: 写真 7466 の 33.6 は SW25 穴
-# 左端 (30.38) → ピン線 (63.98、スキャン穴 64.07 と一致) で、
-# 軸はピン線から外側端方向へ long と同じ +3.1 → 67.2。
-TRRS_Y   = {"short": 67.2, "long": 80.3}   # TRRS開口中心 y（ケース座標、実測）
-TRRS_W   = 9.0          # TRRS開口幅（y方向）
-TRRS_Z0, TRRS_Z1 = PCB_TOP + 0.45, PCB_TOP + 5.85   # ジャック中心 = 基板表面+3.0
+# TRRS: v2.4.4 (§17.18) で本人の実物写真注記により y 位置を再是正
+# （旧値はピン列であって軸ではなかった。long: 写真 7465 の 91.2
+# （階段端 171.6 から中心まで）＋画素計測（中心 y≈80.1）で軸 80.3。
+# short: 写真 7466 の 33.6 は SW25 穴左端 (30.38) → ピン線
+# (63.98、スキャン穴 64.07 と一致) で、軸はピン線から外側端方向へ
+# long と同じ +3.1 → 67.2）。
+# v2.4.8 (§17.22): z の前提を全面是正。従来前提（本体が基板の上、
+# 中心 = 基板表面+3.0）は誤りで、監査 (§17.21) と本人実測
+# （2026-11-06、基板込み全厚 6.7mm）で、ジャックは裏面
+# （Light Side）実装と確定した。基板厚 1.6 を引くと裏面から
+# 5.1mm 張り出し、ケース座標の占有は z 0.6〜5.7（基板裏面から下）。
+TRRS_Y   = {"short": 67.2, "long": 80.3}   # TRRS中心 y（ケース座標、実測）
+TRRS_PROTRUDE = 5.1     # ジャックの基板裏面からの張り出し（全厚 6.7 − 基板 1.6）
+TRRS_JACK_Z0  = PCB_BOT - TRRS_PROTRUDE   # 0.6: ジャック下端（ケース座標）
+# 軸 z の推定: 本体高さ 5.1 に対し穴 Ø3.5 の中心は、本体下端から
+# 穴半径 1.75＋下壁 0.5〜0.8 → 2.25〜2.55 上が物理的範囲（軸の
+# 取り付け面からの距離は 5.1−(2.25〜2.55) = 2.55〜2.85）。写真
+# 7466 の拡大でも、軸（開口端面の中心）は本体のほぼ中央で裏面
+# 寄りに見える。一般的な SMD 3.5mm ジャックの取り付け面→軸
+# オフセット 2.6〜3.1 とも整合するため、軸 = 基板裏面 −2.7±0.4、
+# ケース座標 z≈3.0±0.4 と推定する（開口はこの振れ込みで設計）。
+TRRS_AXIS_Z   = 3.0     # 軸 z 推定（ケース座標、±0.4）
+# 開口・逃げの寸法: ジャック本体幅は写真 7466 の画素計測で約 6mm
+# （基板面スケール換算）。プラグ胴体 Ø6.5 級が軸 z ±0.4 の振れ
+# でも当たらないよう、開口は裏面側の全帯域（トレイ床貫通〜基板
+# 裏面）を背面壁に開け、フレーム下端にも 1.2 の逃げを入れる。
+TRRS_OPEN_W   = 11.0    # 開口・逃げの y 幅（本体約6＋プラグØ6.5 に両側 2.25 余裕）
+TRRS_CUT_X0   = 100.0   # 逃げの内側端 x（背面フェイス 114.3 から 14.3mm。
+                        # ジャック本体＋ピンの内側端の想定最大 ~10mm に余裕）
+TRRS_FRAME_Z1 = PCB_BOT + 1.2   # 6.9: フレーム下端の逃げ上端（プラグ胴体用）
 
 # --- アンダーグロー（v2.1 で側面バンドへ統合・廃止） ---
 # v1〜v2 の「壁を薄くする帯」は、v2.1 で独立パーツの側面バンド（白）に
@@ -1188,6 +1223,25 @@ def build_half(half):
     ymax = outline.bounds[3]
     trrs_y = TRRS_Y[half]
 
+    # 【v2.4.8】TRRS 開口とパドル窓の間の背面壁セグメントの y 範囲。
+    # バンドの背面壁は TRRS 開口（全高）とパドル窓（全高）の2箇所で
+    # 切れるため、その間の壁（レッジ含む）が独立片になる。ジャックの
+    # 影（裏面から 5.1・幅 ±3.25）がバンド断面（z1.9〜5.7 の壁＋
+    # レッジ）の全体に重なるので、バンド内に橋渡しできる箇所がない。
+    # 対策: バンド側は開口をパドル窓まで連続させて1ソリッドを保ち、
+    # 壁とレッジの形状はトレイの付属として同じ位置に作る（基板支持・
+    # 外形・内面は従来のバンド島と同一。色だけトレイの黒になる）。
+    _spans = H["paddle_spans_bot"]
+    if half == "short":
+        isl_y0 = trrs_y + TRRS_OPEN_W / 2
+        isl_y1 = min(s[0] for s in _spans if s[0] > trrs_y)
+    else:
+        isl_y0 = max(s[1] for s in _spans if s[1] < trrs_y)
+        isl_y1 = trrs_y - TRRS_OPEN_W / 2
+    H["trrs_island"] = (isl_y0, isl_y1)
+    print(f"[{half}] TRRS island segment y {isl_y0:.1f}..{isl_y1:.1f} "
+          "-> tray-owned wall segment")
+
     # ---------- スイッチプレート（別体） ----------
     sq_polys = [square_poly(s["cx"], s["cy"], SW_HOLE_MODEL) for s in H["sw"]]
     hole_polys = sq_polys + list(H["slots"])
@@ -1214,8 +1268,9 @@ def build_half(half):
     # 14.15 角だったが、穴の上辺〜外周の壁が 0.45mm しかなく、0.5mm の
     # 堀が壁を断ち切って開口が外側の切り欠きとつながった（実測 x 15.0 /
     # y 22.5 以上、MX のパチ留めタブが掛からない）。ブリッジ（§17.14）の
-    # 上限は cavity-0.2 で、この穴は基板踏面（y=171.6、§17.12 の推定）
-    # より外にはみ出すため、壁を「追加」で直すことはできない。代わりに、
+    # 上限は cavity-0.2 で、この穴は基板踏面（y=171.6、§17.12 の推定。
+    # §17.24 で実基板 176.0 に是正済み）より外にはみ出すため、壁を
+    # 「追加」で直すことはできない。代わりに、
     # fin-fix 前のフットプリントで開口が設計値ちょうどだった角穴に限り、
     # 堀が削った材料（fin-fix 前の外周 plate_bnd の内側のみ）を戻し、
     # 開口を設計値に復元する。もともと縁へ開いた notch 穴（開口が設計値
@@ -1301,12 +1356,21 @@ def build_half(half):
     # （裏面実装でコネクタが z 0〜3 に来るため）。フレーム側にあった
     # 旧開口（z 9.8〜15.3）とプラグポケットは廃止し、壁に戻す。
     # カットはトレイ／バンド構築側で行う。
-    # TRRS開口（背面壁）
-    frame = frame - box(xmax - 6.5, xmax + 1, trrs_y - TRRS_W / 2, trrs_y + TRRS_W / 2, TRRS_Z0, TRRS_Z1)
+    # v2.4.8 (§17.22): 旧 TRRS 開口（背面壁 z 7.75〜13.15）は廃止
+    # （ジャックは裏面実装で本体は基板の下にあり、開口はトレイ＋
+    # バンド側に新設する。旧開口は壁に戻る）。フレーム側に残すのは
+    # プラグ胴体の逃げだけ: 胴体（Ø6.5 級、軸 z≈3.0±0.4）の上端は
+    # 最大 z≈6.65 に達する一方、タブ部のフレーム下帯は背面壁の膜
+    # （0〜0.5mm 級）しか残らないため、帯域ごと z 6.9 まで取り除く
+    # （膜状区間の解消も兼ねる）。
+    frame = frame - box(TRRS_CUT_X0, xmax + 1,
+                        trrs_y - TRRS_OPEN_W / 2, trrs_y + TRRS_OPEN_W / 2,
+                        PCB_BOT - 0.1, TRRS_FRAME_Z1)
     # v2.4.6 (§17.20): L21 逃げノッチ（long のみ）。階段最上段の角
     # スイッチ L21 の占有域（14.0 角）がフレーム下帯内壁を 2.42mm
     # 突き破るため、14.3 角相当の箱で z 5.7〜11.0（下帯＋プレート帯）
     # を切り欠く。プレート自体の穴（14.15）はそのまま受ける。
+    # v2.4.10 (§17.24): 踏面是正後は実在材料と交わらず無効（保険）。
     if half == "long":
         frame = frame - box(L21_CX - L21_NOTCH_HALF, L21_CX + L21_NOTCH_HALF,
                             L21_CY - L21_NOTCH_HALF, L21_CY + L21_NOTCH_HALF,
@@ -1376,6 +1440,47 @@ def build_half(half):
     # USB開口（端壁、トレイ分）: z USB_Z0〜USB_Z1 を端壁に通す
     tray = tray - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
                       usb_ch_y[0], usb_ch_y[1], USB_Z0 - 0.1, USB_Z1)
+    # v2.4.8 (§17.22): TRRS ジャック（裏面実装）の逃げ＋プラグ開口
+    # （トレイ分）。ジャック下端は z=0.6 で床上面（2.5）を 1.9 下回
+    # る。本人実測の全厚 6.7 は目安値で ±0.2 級の振れがあり、残り
+    # 床 0.6 のポケットでは最悪ケースで下端が床に当たり基板が座ら
+    # ない恐れがあるため、床は貫通させる（裏蓋なし）。開口は背面
+    # 縁に開いた 11.0 × 14.3 のスロットで、大半はジャック本体が
+    # 塞ぎ、ジャック下端は下面から 0.6 奥まって見える。
+    tray = tray - box(TRRS_CUT_X0, xmax + 1,
+                      trrs_y - TRRS_OPEN_W / 2, trrs_y + TRRS_OPEN_W / 2,
+                      -0.1, FLOOR_T + 0.1)
+    # 【v2.4.8】TRRS 開口とパドル窓の間の背面壁セグメント（トレイ付属）。
+    # バンドで独立片になる壁＋レッジを、同じ断面形状のままトレイ側に
+    # 持たせる（上記コメント参照）。下部はバンド薄壁と同じ殻厚、上部は
+    # キャビティ壁＋レッジで、下端は床へ食い込ませて融合させる。
+    _strip = Polygon([(TRRS_CUT_X0, isl_y0), (xmax + 1.0, isl_y0),
+                      (xmax + 1.0, isl_y1), (TRRS_CUT_X0, isl_y1)])
+    _seg_low = outline.intersection(_strip).difference(
+        inset(outline, BAND_T))
+    _seg_high = outline.intersection(_strip).difference(cavity)
+    _seg_ledge = outset(cavity, LEDGE_EMBED, round_join=True)
+    _seg_ledge = _seg_ledge.intersection(_strip).difference(
+        inset(pcb, LEDGE_UNDER))
+    def _polys(_p):
+        if _p.is_empty:
+            return []
+        return [_p] if _p.geom_type == "Polygon" else list(_p.geoms)
+    for _g in _polys(_seg_low):
+        if _g.area > 0.1:
+            tray = tray + prism(_g, FLOOR_T - 0.5, LEDGE_Z0 + 0.05)
+    for _g in _polys(_seg_high):
+        if _g.area > 0.1:
+            tray = tray + prism(_g, LEDGE_Z0 - 0.05, PCB_BOT)
+    for _g in _polys(_seg_ledge):
+        if _g.area > 0.1:
+            tray = tray + prism(_g, LEDGE_Z0, PCB_BOT)
+    # セグメント内の背面ネジは通し穴を上まで延長する
+    for _e in back_screws:
+        if isl_y0 - 0.1 <= _e["y"] <= isl_y1 + 0.1:
+            _sp = BACK_SCREW_SPECS[_e["size"]]
+            tray = tray - cyl(_e["x"], _e["y"], FLOOR_T - 0.1,
+                              _sp["clr"], PCB_BOT - FLOOR_T + 0.3)
     # ネジ通し穴＋頭ザグリ（床の分。バンド帯域の逃げはバンド側で切る）
     for (sx, sy, spec) in all_screws:
         tray = tray - cyl(sx, sy, -0.1, spec["clr"], FLOOR_T + 0.2)
@@ -1411,6 +1516,20 @@ def build_half(half):
     # USB開口（端壁、バンド分）: z USB_Z0〜USB_Z1 を端壁に通す（v2.4.4, §17.18）
     band = band - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
                       usb_ch_y[0], usb_ch_y[1], USB_Z0 - 0.1, USB_Z1)
+    # v2.4.8 (§17.22): TRRS 開口（バンド分）。背面壁をバンド全高で
+    # 開け、ジャック本体の逃げとプラグ経路にする。監査 (§17.21)
+    # で見つかった「z 2.5〜4.4 で薄壁の内面が基板背面ふちの内側へ
+    # 最大約 1.2mm 入り込む帯（TRRS タブ帯を含む）」は、この帯域
+    # の壁・レッジごと切り取るため解消する。レッジは上で和集合
+    # 済みのため同帯域分はここで切り取られ、タブ部の基板支持は
+    # 帯域外のレッジが担う。リングの連続性は他の部分で保たれる
+    # （レッジ帯の天面側はフレームが覆う）。
+    # y 範囲は島セグメント（isl_y0〜isl_y1）まで広げる: 壁セグメントは
+    # トレイ付属として作るので、バンド側は開口〜パドル窓を連続させる。
+    band = band - box(TRRS_CUT_X0, xmax + 1,
+                      min(trrs_y - TRRS_OPEN_W / 2, isl_y0),
+                      max(trrs_y + TRRS_OPEN_W / 2, isl_y1),
+                      FLOOR_T - SKIRT_DROP - 0.1, PCB_BOT + 0.1)
     # 背面ネジの逃げ（バンド帯域分。吊りボス用ネジは内側の空間を通るので不要）
     for e in back_screws:
         spec = BACK_SCREW_SPECS[e["size"]]
@@ -1460,10 +1579,54 @@ def build_half(half):
     # v2.4.6 (§17.20): L21 逃げノッチ（バンド側、long のみ）。L21 の
     # 基板裏ソケットがレッジ帯（z 4.4〜5.7）の内壁へ食い込む分を、
     # フレーム側と同じ 14.3 角相当の箱で切り欠く。
+    # v2.4.10 (§17.24): 踏面是正後は実在材料と交わらず無効（保険）。
     if half == "long":
         band = band - box(L21_CX - L21_NOTCH_HALF, L21_CX + L21_NOTCH_HALF,
                           L21_CY - L21_NOTCH_HALF, L21_CY + L21_NOTCH_HALF,
                           LEDGE_Z0, PCB_BOT + 0.1)
+    # v2.4.9 (§17.23): レッジ×キーソケットの局所切り欠き（全半分）。
+    # 包絡（A∪B、両向き）がレッジ帯リング（pcb − inset(pcb, 1.5)）
+    # と重なるソケットだけ、包絡 +0.3 を基板外形 +0.9 でクリップ
+    # してレッジ帯 z[4.4, 5.7] を切り取る。z 4.4 未満（薄壁の
+    # 蹴上ストリップ等）は切らない: 蹴上に当たるのは rot 包絡
+    # のみで、該当列の実向きはスキャン接点計測で std と確認
+    # 済み（§17.23 D）。壁の連続性（check_dock の断面前提）
+    # も保たれる。
+    ledge_ring = pcb.difference(inset(pcb, LEDGE_UNDER))
+    sock_rows = []
+    for row in csv.DictReader(open(f"{BASE}/template/pcb_sockets.csv")):
+        if row["half"] != half or row["kind"] not in ("square", "tall"):
+            continue
+        if row["method"] == "dome_centroid" and row["meas_x_mm"]:
+            sock_rows.append((row["hole_id"], float(row["meas_x_mm"]),
+                              float(row["meas_y_mm"])))
+        else:
+            sock_rows.append((row["hole_id"], float(row["dxf_x_mm"]),
+                              float(row["dxf_y_mm"])))
+    for (sid, cx, cy) in sock_rows:
+        envs = []
+        # (x0, x1, y0, y1): std = バーが +x 側 / rot = 180° 回転。
+        # B は +y 側に長い非対称形のため rot では y 範囲も反転する。
+        for (ax0, ax1, ay0, ay1, bx0, bx1, by0, by1) in (
+                (1.5, 7.5, -7.8, 7.8, 0.75, 6.9, -8.0, 9.7),
+                (-7.5, -1.5, -7.8, 7.8, -6.9, -0.75, -9.7, 8.0)):
+            dome = Point(cx, cy).buffer(2.75, resolution=24)
+            bar_a = Polygon([(cx + ax0, cy + ay0), (cx + ax1, cy + ay0),
+                             (cx + ax1, cy + ay1), (cx + ax0, cy + ay1)])
+            bar_b = Polygon([(cx + bx0, cy + by0), (cx + bx1, cy + by0),
+                             (cx + bx1, cy + by1), (cx + bx0, cy + by1)])
+            envs += [bar_a, bar_b, dome]
+        env = unary_union(envs)
+        if env.intersection(ledge_ring).area <= 0:
+            continue
+        notch = env.buffer(SOCK_NOTCH_PAD).intersection(outset(pcb, 0.9))
+        geoms = [notch] if notch.geom_type == "Polygon" else \
+            [g for g in getattr(notch, "geoms", []) if g.geom_type == "Polygon"]
+        for g in geoms:
+            if g.area > 0.01:
+                band = band - prism(g, LEDGE_Z0, PCB_BOT + 0.1)
+        print(f"[{half}] socket ledge notch: {sid} ({cx:.2f},{cy:.2f}) "
+              f"ring_overlap={env.intersection(ledge_ring).area:.2f} mm^2")
 
     return dict(plate=plate, frame=frame, tray=tray, band=band)
 

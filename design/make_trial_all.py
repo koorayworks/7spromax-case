@@ -69,27 +69,61 @@ def main():
     # bbox 矩形で棚（行）に並べ、行内・行間とも 3mm 以上の間隔を
     # 空ける。配置後の検証（体積・watertight・間隔・ベッド内）は従来
     # どおり下流のアサーションで行う。
+    # v2.4.10 (§17.24): 階段バンド long の奥行き増（51.5）で棚置き
+    # グリーディが溢れたため、MaxRects（空き矩形のベストフィット
+    # 分割）に変更。ピース間隔は各ピースを GAP 分膨らませて確保する
+    # （ベッド端だけは実寸で判定）。
     GAP = 3.0
     items = []
     for label, s in pieces:
         b = s.bounds
         items.append((label, s, b[1, 0] - b[0, 0], b[1, 1] - b[0, 1]))
-    items.sort(key=lambda t: -t[3])   # 深い順
+    items.sort(key=lambda t: -(t[2] * t[3]))   # 面積の大きい順
     placed = []
-    x = y = 0.0
-    row_d = 0.0
-    for label, s, w, d in items:
-        rot = False
-        if x > 0 and x + w > BED and x + d <= BED and d <= row_d:
-            rot = True
-            w, d = d, w
-        if x + w > BED:
-            y += row_d + GAP
-            x = 0.0
-            row_d = 0.0
-            rot = False
-            w, d = (lambda bb: (bb[1, 0] - bb[0, 0], bb[1, 1] - bb[0, 1]))(s.bounds)
-        assert x + w <= BED and y + d <= BED, f"bed overflow at {label}"
+    free = [(0.0, 0.0, BED, BED)]   # (x, y, w, d) の空き矩形
+    for label, s, w0, d0 in items:
+        best = None   # (short_leftover, long_leftover, fi, rot, w, d)
+        for fi, (fx, fy, fw, fd) in enumerate(free):
+            for rot, (w, d) in enumerate(((w0, d0), (d0, w0))):
+                if rot and w0 == d0:
+                    continue
+                if fx + w > BED or fy + d > BED:
+                    continue
+                if w <= fw and d <= fd and \
+                   (w + GAP <= fw or fx + w >= BED - 1e-9) and \
+                   (d + GAP <= fd or fy + d >= BED - 1e-9):
+                    lo = (min(fw - w, fd - d), max(fw - w, fd - d))
+                    if best is None or lo < best[0]:
+                        best = (lo, fi, rot, w, d)
+        assert best is not None, f"bed overflow at {label}"
+        _, fi, rot, w, d = best
+        fx, fy, fw, fd = free.pop(fi)
+        x, y = fx, fy
+        # 使用領域（GAP 込み）を差し引いて空き矩形を分割・ prune
+        uw, ud = min(w + GAP, BED - fx), min(d + GAP, BED - fy)
+        newfree = []
+        for (ax, ay, aw, ad) in free + [(fx, fy, fw, fd)]:
+            if ax >= fx + uw or ay >= fy + ud or \
+               ax + aw <= fx or ay + ad <= fy:
+                newfree.append((ax, ay, aw, ad))
+                continue
+            if ax < fx:
+                newfree.append((ax, ay, fx - ax, ad))
+            if ax + aw > fx + uw:
+                newfree.append((fx + uw, ay, ax + aw - (fx + uw), ad))
+            if ay < fy:
+                newfree.append((ax, ay, aw, fy - ay))
+            if ay + ad > fy + ud:
+                newfree.append((ax, fy + ud, aw, ay + ad - (fy + ud)))
+        free = []
+        for r in newfree:
+            if r[2] <= 0.01 or r[3] <= 0.01:
+                continue
+            if any(r != q and r[0] >= q[0] and r[1] >= q[1] and
+                   r[0] + r[2] <= q[0] + q[2] and
+                   r[1] + r[3] <= q[1] + q[3] for q in newfree):
+                continue
+            free.append(r)
         m = s.copy()
         if rot:
             T = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
@@ -99,9 +133,7 @@ def main():
         assert abs(m.volume - s.volume) < 0.01, f"volume changed {label}"
         assert m.is_watertight, f"not watertight {label}"
         placed.append((label, m, footprint(m)))
-        print(f"  {label}: vol={m.volume:.1f} rot={rot} -> ({x:.1f},{y:.1f})")
-        x += w + GAP
-        row_d = max(row_d, d)
+        print(f"  {label}: vol={m.volume:.1f} rot={bool(rot)} -> ({x:.1f},{y:.1f})")
     mind = 1e9
     for i in range(len(placed)):
         for j in range(i + 1, len(placed)):
