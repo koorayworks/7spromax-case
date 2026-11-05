@@ -20,7 +20,10 @@ USB 開口チャネルと MCU ポケットのチェック（v2.4.4、§17.18）
      ヘッダ 3.0 → z[1.1,2.7]）とコネクタ（各ヘッダで中心
      2.4/1.9、総厚 3.2 → z[0.8,4.0] / z[0.3,3.5]）のボックスが
      トレイ／バンド／フレームと干渉しないこと。
-  4. TRRS チャネル（背面壁）の貫通（従来どおり）。
+  4. TRRS チャネル: v2.4.8 (§17.22) で裏面実装に是正。新しい
+     低いチャネル（トレイ＋バンド背面壁、軸 z≈3.0±0.4）が貫通して
+     いることと、フレームの旧開口（z 7.75〜13.15）が壁に戻って
+     いることを確認する。ジャック実体との干渉は check_trrs.py。
 
 実行: ~/workspace/.venv-cad/bin/python check_usb_channel.py
 """
@@ -127,17 +130,32 @@ def main():
                   + " ".join(f"{k}={v:.2f}" for k, v in res.items()))
             if any(v > 0.01 for v in res.values()):
                 ok = False
-        # --- 4. TRRS チャネル ---
-        zt = (bc.TRRS_Z0 + bc.TRRS_Z1) / 2
-        polys_t = section_polys(parts["frame"], zt)
+        # --- 4. TRRS チャネル（v2.4.8, §17.22: 裏面実装に是正） ---
         ty = bc.TRRS_Y[half]
-        xs = np.arange(104.0, ob[2] + 0.01, 0.25)
-        hits_t = [x for x in xs if blocked(polys_t, x, ty)]
-        wall_t = [x for x in hits_t if x >= 108.0]
-        stat_t = "OK (through)" if not wall_t else f"NG blocked at x={wall_t}"
-        if wall_t:
+        # 4a. 新チャネル: 軸推定 z=3.0±0.4 の全域で、背面壁を含む
+        # x 帯（104〜外面+0.5）に材料が無いこと（トレイ＋バンド＋
+        # フレームの和集合で判定）。
+        for zt in (2.6, 3.0, 3.4):
+            polys_t = []
+            for k in ("tray", "band", "frame"):
+                polys_t += section_polys(parts[k], zt)
+            xs = np.arange(104.0, ob[2] + 0.51, 0.25)
+            hits_t = [x for x in xs if blocked(polys_t, x, ty)]
+            stat_t = "OK (through)" if not hits_t else \
+                f"NG blocked at x={[round(float(h), 2) for h in hits_t]}"
+            if hits_t:
+                ok = False
+            print(f"{half} TRRS low channel (y={ty}, z={zt:.1f}): {stat_t}")
+        # 4b. フレーム旧開口の閉塞: 旧中心 z=10.45 の背面壁帯域
+        # （外面から 1.5mm）が全て材料であること。
+        polys_old_t = section_polys(parts["frame"], 10.45)
+        xs_old = np.arange(ob[2] - 1.5, ob[2] - 0.01, 0.25)
+        gaps_t = [x for x in xs_old if not blocked(polys_old_t, x, ty)]
+        stat_o = "OK (filled)" if not gaps_t else \
+            f"NG still open at x={[round(float(g), 2) for g in gaps_t]}"
+        if gaps_t:
             ok = False
-        print(f"{half} TRRS channel (y={ty}, z={zt:.2f}): {stat_t}")
+        print(f"{half} frame old TRRS opening (z=10.45): {stat_o}")
     print("CHANNEL CHECK " + ("OK" if ok else "NG"))
 
 if __name__ == "__main__":
