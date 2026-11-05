@@ -171,6 +171,62 @@ PADDLE_SLOT_Z0   = 5.7    # スロット下端（= PCB_BOT、フレーム下端�
 # この逃げは次ラウンドのプランジャ穴の土台になる。
 PADDLE_SLOT_Z1   = 13.2   # スロット上端（タクト先端 12.5 + 逃げ 0.7）
 PADDLE_SLOT_X0   = 102.0  # スロット内側端 x
+
+# --- v2.4.5: プランジャ（小ボタン）§17.19 ---
+# §17.18 の推奨案 (A) を実装する。タクト中心の x は未実測のため、
+# §17.18 のタクト実体ボックス（x 103.5〜109.5、check_paddle_real と
+# 共通）の中心を最善推定として使う（実体は約 5mm 幅でボックス内に
+# 収まるとされ、中心のずれは ±1mm 級の見込み。受け側の余裕は下記）。
+TACT_X           = 106.5  # タクト中心 x（推定。実物確認は試作で本人）
+# フレーム側の受け（タクト中心に同軸）:
+PLUNGER_HOLE_D   = 5.4    # ガイド穴径（軸 Ø4.6 に片側 0.4 逃げ、§17.18）
+PLUNGER_CB_D     = 8.6    # キャップ座ぐり径（キャップ Ø8 に片側 0.3）。
+                          # §17.18 の Ø9 級（座ぐり 9.6）はタクト間隔
+                          # 9.5 と同等で座ぐり間にウェブが残らないため、
+                          # 間隔内に収まる径へ縮小した（座ぐり間に
+                          # 0.9 のウェブが残る）。なお屋根の分離問題は
+                          # 座ぐりでなくガイド穴が原因（連結帯の項）
+PLUNGER_CB_FLOOR = 14.1   # 座ぐり床 z（天面 16.1 から深さ 2.0）
+PLUNGER_GUIDE_Z0 = 12.9   # ガイド穴カットの下端（スロット上面 13.2 の
+                          # 少し下から切り、貫通を確実にする）
+# プランジャ本体（組立座標の z。静止時）:
+#   キャップ  z[15.2, 17.2]（天面から +1.1 出る。§17.18 の +1 目標）
+#   軸        z[12.9, 15.2]（Ø4.6、長さ 2.3）
+#   フランジ  z[11.9, 12.9]（Ø7、厚 1.0。ガイド穴 Ø5.4 より大きく
+#             抜け止め。天井（スロット上面 13.2）まで 0.3 の遊び）
+#   受け凹み  フランジ下面から深さ 0.9（天井 z=12.8、Ø4.0）。
+#             タクト先端（z 12.5、Ø2 級・推定）を呑み、接触面と
+#             先端の静止間隔 0.3 を確保する。先端が凹み中心から
+#             ±1.0 ずれても凹みに入る。
+# 押下ストローク: 静止間隔 0.3 + 作動 0.5 + オーバートラベル 0.3
+#   = 1.1 でキャップ下面が座ぐり床に当たりストッパが効く
+#   （スイッチ側のオーバートラベル予算 0.5 を使い切る前に止まる）。
+#   フランジ下面とスイッチ本体上面（z≈10.6）の間隔は静止 1.3 で、
+#   ストッパ（1.1）が先に効く。
+PLUNGER_CAP_D    = 8.0    # §17.18 の Ø9 から縮小（座ぐり Ø8.6 と対。
+                          # 間隔 9.5 内に収めるため、上の座ぐりの項参照）
+PLUNGER_CAP_T    = 2.0    # §17.18 は厚 3 だったが、ストッパ位置
+                          # （床 14.1）と上面 +1.1 を両立させるため 2.0
+PLUNGER_SHAFT_D  = 4.6
+PLUNGER_SHAFT_L  = 2.3
+PLUNGER_FLANGE_D = 7.0
+PLUNGER_FLANGE_T = 1.0
+PLUNGER_RECESS_D = 4.0
+PLUNGER_RECESS_DEPTH = 0.9
+PLUNGER_TOTAL_H  = (PLUNGER_CAP_T + PLUNGER_SHAFT_L
+                    + PLUNGER_FLANGE_T)   # 5.3（印刷時の全高）
+# フレーム屋根の連結帯（§17.19）: 屋根ブロック（タクト上の屋根）は
+# 外形の段差コーナー（タブ付け根、x≈106.25）で細く括れており、
+# ガイド穴 Ø5.4 がその括れを断ち切って屋根が島になる（切り分け:
+# ガイド穴のみで 3 ソリッド化、座ぐりのみでは 1 ソリッド）。
+# 対策として、屋根の内側縁（キャビティ縁 x≈104.5）に沿って
+# x[102.0, 104.6] × z[13.2, 16.1] の帯をタクト列の前後に渡し、
+# 穴（内側端 103.8）と座ぐり（同 102.2）の下層 z[13.2, 14.1] に
+# 幅 1.8 の連結糸を残す。帯は天面開口の背面側に 1.7mm 張り出す
+# 唇状になる（タクト先端との間隔はスロット上面と同じ 0.7）。
+PLUNGER_STRIP_X0 = 102.0  # 連結帯の内側面 x
+PLUNGER_STRIP_X1 = 104.6  # 連結帯の背面側面 x（キャビティ縁 104.5 へ重ねる）
+PLUNGER_STRIP_YM = 6.0    # 帯の y 余長（タクト列の両端から）
 WIN_MERGE_GAP    = 3.0    # ボトム窓どうしの間隔がこれ未満なら連結する
                           # （窓間に残る細い歯・孤立フィンの除去、v2.1）
 
@@ -1144,6 +1200,25 @@ def build_half(half):
     for tc in TACT_CENTERS[half]:
         frame = frame - box(PADDLE_SLOT_X0, xmax + 1, tc - PADDLE_SLOT_HW, tc + PADDLE_SLOT_HW,
                             PADDLE_SLOT_Z0, PADDLE_SLOT_Z1)
+    # v2.4.5 (§17.19): 屋根の連結帯。ガイド穴で断たれる屋根ブロック
+    # 同士を、内側縁に沿う帯（PLUNGER_STRIP 参照）で連結する。
+    strip_y0 = min(TACT_CENTERS[half]) - PLUNGER_STRIP_YM
+    strip_y1 = max(TACT_CENTERS[half]) + PLUNGER_STRIP_YM
+    frame = frame + box(PLUNGER_STRIP_X0, PLUNGER_STRIP_X1,
+                        strip_y0, strip_y1, PADDLE_SLOT_Z1, FRAME_TOP)
+    # v2.4.5 (§17.19): プランジャの受け。タクト中心（TACT_X は推定）に
+    # ガイド穴 Ø5.4（スロット上面〜天面）とキャップ座ぐり Ø8.6
+    # （床 z=14.1）を開ける。パドルスロットは今回も残置する: スロットは
+    # タクト実体とプランジャのフランジ（Ø7）の逃げとして現役であり、
+    # 埋めると干渉確認ができなくなるため（§17.19 の判断記録）。
+    # なおガイド穴の内側端（x<約104.5）は天面開口（well）側へ
+    # 約 0.7mm 破れる（屋根の実材は x≈104.5〜背面フェイス）。軸の
+    # 案内は残る 3 方向と座ぐりで足りる見込みで、試作で確認する。
+    for tc in TACT_CENTERS[half]:
+        frame = frame - cyl(TACT_X, tc, PLUNGER_GUIDE_Z0, PLUNGER_HOLE_D,
+                            FRAME_TOP + 0.3 - PLUNGER_GUIDE_Z0)
+        frame = frame - cyl(TACT_X, tc, PLUNGER_CB_FLOOR, PLUNGER_CB_D,
+                            FRAME_TOP + 0.3 - PLUNGER_CB_FLOOR)
     # USB開口は v2.4.4 (§17.18) でトレイ＋バンドの端壁へ移設した
     # （裏面実装でコネクタが z 0〜3 に来るため）。フレーム側にあった
     # 旧開口（z 9.8〜15.3）とプラグポケットは廃止し、壁に戻す。
@@ -1325,6 +1400,27 @@ def clip(part, xr, yr):
         raise RuntimeError("clip produced no solid")
     return fuse_solids(solids)
 
+def build_plunger():
+    """プランジャ（小ボタン）単体。左右・6タクト共通の同一部品。
+
+    印刷方向でモデリングする: キャップ上面をベッドに置く
+    （print z=0 が組立 z=17.2、print z が上がるほど組立では下がる）。
+      print z[0.0, 2.0] キャップ Ø9（組立 z[15.2, 17.2]）
+      print z[2.0, 4.3] 軸 Ø4.6（組立 z[12.9, 15.2]）
+      print z[4.3, 5.3] フランジ Ø7（組立 z[11.9, 12.9]）
+      受け凹みはフランジの組立下面 = print 上面から深さ 0.9 の
+      Ø4.0 の窪み（組立の天井 z=12.8）。
+    サポート不要（段差は軸→フランジの 1.2mm/片側のみで、下面は
+    抜け止めの接触面だが多少の垂れは機能に影響しない）。
+    """
+    p = cyl(0, 0, 0, PLUNGER_CAP_D, PLUNGER_CAP_T)
+    p = p + cyl(0, 0, PLUNGER_CAP_T, PLUNGER_SHAFT_D, PLUNGER_SHAFT_L)
+    p = p + cyl(0, 0, PLUNGER_CAP_T + PLUNGER_SHAFT_L,
+                PLUNGER_FLANGE_D, PLUNGER_FLANGE_T)
+    p = p - cyl(0, 0, PLUNGER_TOTAL_H - PLUNGER_RECESS_DEPTH,
+                PLUNGER_RECESS_D, PLUNGER_RECESS_DEPTH + 0.2)
+    return p
+
 results = {}
 for half in ("short", "long"):
     print(f"===== build {half} =====")
@@ -1334,6 +1430,9 @@ for half in ("short", "long"):
     export(parts["frame"], f"top_frame_{half}")
     export(parts["tray"], f"bottom_tray_{half}")
     export(parts["band"], f"side_band_{half}")
+
+# プランジャ（小ボタン）: 左右共通部品を 1 点書き出す（必要数 6）
+export(build_plunger(), "plunger")
 
 # ============================= 試作片（1回の印刷セッションに集約） =============================
 # 方針（v2.1 後半の本人指示）: 試作回数を最小化する。必須の確認だけを
@@ -1345,6 +1444,9 @@ for half in ("short", "long"):
 #   - パドルスロット: trial_corner_{tray,band,frame}_<half>（両半分。
 #     手で重ねてパドルの挿入・保持・タクト逃げを見る。long はタクト1の
 #     ブロック角が仮想で壁に近いため特に確認対象）
+#   - v2.4.5: 角フレームにはプランジャのガイド穴＋座ぐりが入り、
+#     plunger.stl（6 個、make_trial_all で複製）が試作一式に加わる。
+#     実基板のタクトに当てて押し心地・ストローク・戻りを見る。
 # ネジまわりの試作片（旧 trial_screw）は、ネジ経路を仮想検証で確認する
 # ことにして廃止した。積層クリップ（旧 trial_compose）も廃止し、
 # 全てパーツ別クリップとする。

@@ -57,6 +57,12 @@ def main():
     for name in FILES:
         for i, s in enumerate(load_solids(f"{BASE}/{name}.stl")):
             pieces.append((f"{name}#{i}", s))
+    # v2.4.5 (§17.19): プランジャ（小ボタン）を 6 個追加する
+    # （左右 3 タクトずつ、共通部品 plunger.stl の複製）。
+    plungers = load_solids(f"{BASE}/plunger.stl")
+    assert len(plungers) == 1, f"plunger.stl solids: {len(plungers)}"
+    for i in range(6):
+        pieces.append((f"plunger#{i}", plungers[0].copy()))
     print(f"{len(pieces)} pieces")
     # v2.4.4: v2.2 スロット再利用はバンド角フラグメントの寸法変化
     # （窓位置の移動）で破綻したため、棚置きパッキングに切り替えた。
