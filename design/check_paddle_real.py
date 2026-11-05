@@ -1,23 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-パドル実モデル（PADDLE_MEASUREMENTS 実測ベース）× ケース各部の干渉チェック。
-配置Bエンベロープ（check_v21 §3）との比較用に、実形状で再測する。
+パドル実モデル（2026-11-05 ノギス実測ベース）× ケース各部の干渉チェック。
 実行: ~/workspace/.venv-cad/bin/python check_paddle_real.py
 
-実モデル（装着姿勢、ケース座標、タクト中心 y=c、軸配置は配置Bと同じ
-ブロック後端 x=101.0）:
-  - ブロック芯: x[101.0,110.75]（長さ 9.75）× y c±2.4（幅 4.8）× z[1.0,9.5]
-    （高さ 8.5）。窪みは基板タブ＋タクト専用でケース部品は入らないため
-    ソリッドで保守的に扱う。後端下面の面取りも省略（保守側）。
-  - 羽根: x[108.25,110.75]（軸厚 2.5、ブロック前面＝バー付け根に flush、
-    写真 7328/7330）× y c±(2.4..4.35)（羽根込み幅 8.7）× z[3.75,6.25]
-    （高さ方向は写真 7332 の目視で中央帯。感度確認として z[5.0,7.5] も測る）
-  - バー: x[110.75,128.35]（露出 17.6、全長 27.35）× y c±2.4 × z[6.8,9.5]
-    （厚 2.7 = 本人再読確定値）
-状態: 静止 / 押下 (-0.5z) / 押下スイング (バー付け根 (110.75,c,8.15) を
-軸に y 回転 +0.5..+4°、先端が下がる向き) / ロール ±2.5° (軸 (106.3,c,5.0)) /
-挿入・垂直 (Δz +5..0, フレーム無し想定で tray/band のみ) /
-挿入・軸方向 (Δx -6..0, tray/band のみ + 参考に frame も)
+注: 2026-11-05 本人決定で金属パドルは使わないことになった
+（高さ不一致 約3.4〜4.2mm、§17.18）。本チェックのパドル配置
+スイープは不使用決定の数値根拠の記録として残す。現行の実務
+チェックは冒頭のタクトスイッチ実体ボックス（上面 z 7.3〜12.5）
+とプレート／フレーム／バンド／トレイの干渉確認。
+
+実測（PADDLE_MEASUREMENTS 追記2）: 全長 25.2 / ブロック高さ 8.6 /
+バー 4.8×2.8 / 羽根込み幅 8.2（7455 注記。旧推定 8.7 との食い違いが
+残るため感度ケースとして 8.7 も測る）/ ブロック長さ 8.2（8.2 の
+対応づけが羽根込み幅と競合するため未確定。感度として 9.75 も測る）。
+
+モデル（装着姿勢、ケース座標、タクト中心 y=c）: 配置B型チャネル。
+  - 脚（羽根込み幅の両側）: x[rx, rx+BL] × y c±(2.4..WING/2) × z[zb, zb+6.8]
+  - 天板: x[rx, rx+BL] × y c±WING/2 × z[zb+6.8, zb+8.6]（厚 1.8）
+  - バー: x[rx+BL, rx+25.2] × y c±2.4 × z[zb+5.8, zb+8.6]（厚 2.8、上面は天板と面一）
+配置のばらつき（§17.18）:
+  - zb（ブロック下端）: 1.0（従来配置B）/ 0.5（天板内面が基板上面
+    7.3 に乗る）/ 0.2 / 0.0 かつ天板薄型（厚 1.0、バー下端 5.8）
+  - y オフセット: 0 / ±1.2（タクト中心の実測精度 ±1〜2mm への感度）
+  - rx（ブロック後端）: 101 を中心に ±1
+状態: 静止 / 押下 (-0.5z) / 押下スイング（バー付け根を軸に先端が
+下がる回転 +2°/+4°、代表配置のみ）
 """
 import numpy as np
 import trimesh
@@ -51,12 +58,14 @@ def boxm(x0, x1, y0, y1, z0, z1):
         transform=trimesh.transformations.translation_matrix(
             [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2]))
 
-def paddle_real(c, wing_z=(3.75, 6.25)):
-    core = boxm(101.0, 110.75, c - 2.4, c + 2.4, 1.0, 9.5)
-    w1 = boxm(108.25, 110.75, c - 4.35, c - 2.4, wing_z[0], wing_z[1])
-    w2 = boxm(108.25, 110.75, c + 2.4, c + 4.35, wing_z[0], wing_z[1])
-    bar = boxm(110.75, 128.35, c - 2.4, c + 2.4, 6.8, 9.5)
-    return trimesh.boolean.union([core, w1, w2, bar], engine="manifold")
+def paddle_real(c, zb=1.0, slab_t=1.8, wing=8.2, bl=8.2, rx=101.0, dy=0.0):
+    leg_t = 8.6 - slab_t          # 脚の高さ（天板下面まで）
+    hw = wing / 2
+    legL = boxm(rx, rx + bl, c + dy - hw, c + dy - 2.4, zb, zb + leg_t)
+    legR = boxm(rx, rx + bl, c + dy + 2.4, c + dy + hw, zb, zb + leg_t)
+    slab = boxm(rx, rx + bl, c + dy - hw, c + dy + hw, zb + leg_t, zb + 8.6)
+    bar = boxm(rx + bl, rx + 25.2, c + dy - 2.4, c + dy + 2.4, zb + 5.8, zb + 8.6)
+    return trimesh.boolean.union([legL, legR, slab, bar], engine="manifold")
 
 def rot_about(mesh, pivot, axis, deg):
     m = mesh.copy()
@@ -66,37 +75,44 @@ def rot_about(mesh, pivot, axis, deg):
     m.apply_transform(T @ R @ Ti)
     return m
 
+# 配置スイープ: (ラベル, kwargs)
+PLACEMENTS = [
+    ("zb1.0/std",      dict(zb=1.0)),
+    ("zb0.5/on-pcb",   dict(zb=0.5)),
+    ("zb0.2",          dict(zb=0.2)),
+    ("zb0.0/thin-slab", dict(zb=0.0, slab_t=1.0)),
+    ("dy+1.2",         dict(zb=0.5, dy=1.2)),
+    ("dy-1.2",         dict(zb=0.5, dy=-1.2)),
+    ("rx100",          dict(zb=0.5, rx=100.0)),
+    ("rx102",          dict(zb=0.5, rx=102.0)),
+    ("wing8.7",        dict(zb=0.5, wing=8.7)),
+    ("bl9.75",         dict(zb=0.5, bl=9.75)),
+]
+
 for half in HALVES:
-    parts = {k: load_part(half, k) for k in ("tray", "band", "frame")}
+    parts = {k: load_part(half, k) for k in ("tray", "band", "frame", "plate")}
     for ci, c in enumerate(bc.TACT_CENTERS[half]):
-        pad = paddle_real(c)
-        states = {}
-        states["rest"] = pad
-        p2 = pad.copy(); p2.apply_translation([0, 0, -0.5]); states["press-0.5z"] = p2
-        for ang in (1.0, 2.0, 3.0, 4.0):
-            states[f"swing+{ang:.0f}"] = rot_about(pad, (110.75, c, 8.15), [0, 1, 0], ang)
-        for ang in (2.5, -2.5):
-            states[f"roll{ang:+.1f}"] = rot_about(pad, (106.3, c, 5.0), [1, 0, 0], ang)
-        print(f"== {half} tact{ci+1} (c={c}) real model, wing z 3.75-6.25 ==")
-        for sname, e in states.items():
+        print(f"== {half} tact{ci+1} (c={c}) measured model ==")
+        # タクトスイッチ実体（2026-11-05 実測, 写真 7463＋本人確認）:
+        # スイッチは基板上面（キースイッチ側）に付きボタン上向き。
+        # 総厚 6.8（基板裏面→先端）= 基板 1.6 + 上面から突出 5.2 →
+        # 先端 z = 7.3 + 5.2 = 12.5。本体・ボタンをまとめた保守
+        # ボックス（x 103.5〜109.5, y c±2.5, z 7.3〜12.5）がケース
+        # 各部（プレート含む）と干渉しないことを確認する。
+        tact = boxm(103.5, 109.5, c - 2.5, c + 2.5, 7.3, 12.5)
+        cells = " ".join(f"{pn}={ivol(tact, parts[pn]):.2f}" for pn in ("tray", "band", "frame", "plate"))
+        print(f"   tact switch box (top z=12.5): {cells}")
+        for label, kw in PLACEMENTS:
+            pad = paddle_real(c, **kw)
+            cells = " ".join(f"{pn}={ivol(pad, parts[pn]):.2f}" for pn in ("tray", "band", "frame"))
+            print(f"   {label:15s} rest: {cells}")
+        # 代表配置（zb0.5）で押下とスイング
+        pad = paddle_real(c, zb=0.5)
+        p2 = pad.copy(); p2.apply_translation([0, 0, -0.5])
+        cells = " ".join(f"{pn}={ivol(p2, parts[pn]):.2f}" for pn in ("tray", "band", "frame"))
+        print(f"   {'zb0.5 press':15s} -0.5z: {cells}")
+        for ang in (2.0, 4.0):
+            e = rot_about(pad, (101.0 + 8.2, c, 0.5 + 7.2), [0, 1, 0], ang)
             cells = " ".join(f"{pn}={ivol(e, parts[pn]):.2f}" for pn in ("tray", "band", "frame"))
-            print(f"   {sname:11s}: {cells}")
-        # 挿入: 垂直降下 (frame 無し想定)
-        worst = {"tray": 0.0, "band": 0.0}
-        for dz in (5.0, 4.0, 3.0, 2.0, 1.0, 0.5):
-            e = pad.copy(); e.apply_translation([0, 0, dz])
-            for pn in ("tray", "band"):
-                worst[pn] = max(worst[pn], ivol(e, parts[pn]))
-        print(f"   insert-drop (max over dz, vs tray/band): tray={worst['tray']:.2f} band={worst['band']:.2f}")
-        # 挿入: 軸方向スライド
-        worst = {"tray": 0.0, "band": 0.0, "frame": 0.0}
-        for dx in (-6.0, -5.0, -4.0, -3.0, -2.0, -1.0, -0.5):
-            e = pad.copy(); e.apply_translation([dx, 0, 0])
-            for pn in ("tray", "band", "frame"):
-                worst[pn] = max(worst[pn], ivol(e, parts[pn]))
-        print(f"   insert-slide (max over dx): tray={worst['tray']:.2f} band={worst['band']:.2f} frame={worst['frame']:.2f}")
-        # 感度: 羽根 z を上げた variant (静止のみ)
-        pad2 = paddle_real(c, wing_z=(5.0, 7.5))
-        cells = " ".join(f"{pn}={ivol(pad2, parts[pn]):.2f}" for pn in ("tray", "band", "frame"))
-        print(f"   rest, wing z 5.0-7.5 (sensitivity): {cells}")
+            print(f"   {'zb0.5 swing':15s} +{ang:.0f}deg: {cells}")
 print("PADDLE REAL CHECK DONE")

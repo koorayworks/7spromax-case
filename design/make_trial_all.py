@@ -53,52 +53,49 @@ def footprint(mesh):
 
 
 def main():
-    # slots from the v2.2 combined file
-    slots = []
-    for s in load_solids(f"{BASE}/v22_backup/trial_all_v22.stl"):
-        slots.append(dict(key=key_of(s), mesh=s))
-    print(f"{len(slots)} slots from v2.2 layout")
     pieces = []
     for name in FILES:
         for i, s in enumerate(load_solids(f"{BASE}/{name}.stl")):
             pieces.append((f"{name}#{i}", s))
-    print(f"{len(pieces)} new pieces")
-    assert len(slots) == len(pieces)
-    # match by (w, d, h) with tolerance (v2.3 pieces can be a few mm
-    # shallower than their v2.2 slots); allow 90-degree rotation
-    used = set()
-    placed = []
+    print(f"{len(pieces)} pieces")
+    # v2.4.4: v2.2 スロット再利用はバンド角フラグメントの寸法変化
+    # （窓位置の移動）で破綻したため、棚置きパッキングに切り替えた。
+    # bbox 矩形で棚（行）に並べ、行内・行間とも 3mm 以上の間隔を
+    # 空ける。配置後の検証（体積・watertight・間隔・ベッド内）は従来
+    # どおり下流のアサーションで行う。
+    GAP = 3.0
+    items = []
     for label, s in pieces:
-        k = key_of(s)
-        best = None
-        for j, sl in enumerate(slots):
-            if j in used:
-                continue
-            sk = sl["key"]
-            for rot in (False, True):
-                kk = (k[1], k[0], k[2]) if rot else k
-                if abs(sk[0] - kk[0]) <= 1 and abs(sk[2] - kk[2]) <= 1 \
-                        and -1 <= sk[1] - kk[1] <= 6:
-                    score = abs(sk[0] - kk[0]) + abs(sk[1] - kk[1])
-                    if best is None or score < best[0]:
-                        best = (score, j, rot)
-        assert best is not None, f"no slot for {label} key={k}"
-        _, j, rot = best
-        used.add(j)
-        sl = slots[j]
+        b = s.bounds
+        items.append((label, s, b[1, 0] - b[0, 0], b[1, 1] - b[0, 1]))
+    items.sort(key=lambda t: -t[3])   # 深い順
+    placed = []
+    x = y = 0.0
+    row_d = 0.0
+    for label, s, w, d in items:
+        rot = False
+        if x > 0 and x + w > BED and x + d <= BED and d <= row_d:
+            rot = True
+            w, d = d, w
+        if x + w > BED:
+            y += row_d + GAP
+            x = 0.0
+            row_d = 0.0
+            rot = False
+            w, d = (lambda bb: (bb[1, 0] - bb[0, 0], bb[1, 1] - bb[0, 1]))(s.bounds)
+        assert x + w <= BED and y + d <= BED, f"bed overflow at {label}"
         m = s.copy()
         if rot:
             T = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
             m.apply_transform(T)
-        # translate: new bbox min -> slot bbox min (z to 0)
-        d = sl["mesh"].bounds[0] - m.bounds[0]
-        d[2] = -m.bounds[0, 2]
-        m.apply_translation(d)
+        mv = np.array([x, y, 0.0]) - m.bounds[0]
+        m.apply_translation(mv)
         assert abs(m.volume - s.volume) < 0.01, f"volume changed {label}"
         assert m.is_watertight, f"not watertight {label}"
         placed.append((label, m, footprint(m)))
-        print(f"  {label}: vol={m.volume:.1f} rot={rot} -> "
-              f"({sl['mesh'].bounds[0,0]:.1f},{sl['mesh'].bounds[0,1]:.1f})")
+        print(f"  {label}: vol={m.volume:.1f} rot={rot} -> ({x:.1f},{y:.1f})")
+        x += w + GAP
+        row_d = max(row_d, d)
     mind = 1e9
     for i in range(len(placed)):
         for j in range(i + 1, len(placed)):

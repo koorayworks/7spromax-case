@@ -44,11 +44,25 @@ XA, XB = 3.2, 113.7          # replaced strip in x
 BAND = 45.0                  # fill band depth (covers deepest spike ~32)
 
 # (x_start, level) per tread; level = min-y for short, max-y for long.
+# 2026-11-05 correction (§17.18): the tread x boundaries were re-anchored
+# on the owner's caliper measurements of the real boards (photos
+# 7461/7462).  The measured segments are the 5 keyed treads from the
+# back, starting at the landing|T5 riser (x=103.4, kept from the DXF
+# anchor; the landing itself was not re-measured):
+#   long  (back->front): 17.2 / 19.1 / 19.1 / 22.0 / 17.2 (tooth tip)
+#         -> risers at 86.2 / 67.1 / 48.0 / 26.0; old DXF-midline
+#         risers were 84.4 / 65.2 / 46.2 / 26.6 (up to 1.9 mm off,
+#         which is why the trial band would not seat at SW31-33).
+#   short (back->front): 20 / 19 / 19 / 16 / 20 (tooth tip)
+#         -> risers at 83.4 / 64.4 / 45.4 / 29.4; old risers were
+#         84.4 / 65.2 / 46.2 / 26.6 (tab tread 19.6 -> 16.0).
+# Levels (depth direction) are NOT covered by those measurements and
+# are unchanged.
 STEPS = {
-    "short": [(3.2, 11.00), (26.6, 0.65), (46.2, 10.25), (65.2, 14.93),
-              (84.4, 24.46), (103.4, 29.98)],
-    "long":  [(3.2, 160.05), (26.6, 152.73), (46.2, 162.25),
-              (65.2, 166.90), (84.4, 171.60), (103.4, 170.80)],
+    "short": [(3.2, 11.00), (29.4, 0.65), (45.4, 10.25), (64.4, 14.93),
+              (83.4, 24.46), (103.4, 29.98)],
+    "long":  [(3.2, 160.05), (26.0, 152.73), (48.0, 162.25),
+              (67.1, 166.90), (86.2, 171.60), (103.4, 170.80)],
 }
 
 

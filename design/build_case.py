@@ -132,22 +132,45 @@ SW_HOLE_FDM    = 0.15   # FDM 印刷補正（穴は小さく出るためモデ�
 SW_HOLE_MODEL  = SW_HOLE + SW_HOLE_FDM   # 14.15mm角でモデリングする
 
 # --- パドル（エクストラスイッチ）まわり: 実測エンベロープで作り直し ---
-# 実測（PADDLE_MEASUREMENTS + 本人再読）: 羽根込み幅 8.7 / ブロック幅 4.8 /
-# 全長 27.3 / ブロック高さ約 8.5 / バー厚 2.7（本人が実物で再読した値を正とする）
-PADDLE_WING_W  = 8.7    # 羽根込み幅（幅方向の最大寸法）
-PADDLE_CLR     = 0.6    # 羽根に対する片側クリアランス → 窓幅 9.9
+# 実測（PADDLE_MEASUREMENTS、2026-11-05 ノギス実測が正）: 全長 25.2 /
+# ブロック高さ 8.6 / バー厚 2.8 / バー幅 4.8。羽根込み幅は 7455 の
+# 注記では 8.2 だが旧推定 8.7 との食い違いが残るため、窓寸法は
+# 大きい方（8.7）を安全側として使う（§17.18）。
+PADDLE_WING_W  = 8.7    # 羽根込み幅（設計用: 実測 8.2 と旧推定 8.7 の大きい方）
+PADDLE_CLR     = 1.05   # 羽根に対する片側クリアランス → 窓幅 10.8
+                        # （v2.4.4/§17.18: タクト中心の実測精度 ±1〜2mm に
+                        # 対し従来の 0.6 では不足するため拡大）
 PADDLE_WIN_X0  = 97.0   # 窓の x 開始（背面側）。ブロック占有 x≈101..111 に余裕を持たせた値
-TACT_CENTERS   = {      # タクト中心 y（ケース座標, PCB_SCAN2_NOTES §8 の実測）
-    "short": [102.6, 110.9, 121.7],
-    "long":  [14.0, 23.5, 35.9],
+TACT_CENTERS   = {      # タクト中心 y（ケース座標）
+    # v2.4.4 (§17.18): 本人の実物写真注記で是正。long は写真 7464 の
+    # 注記チェーン（ピン線 83.5 −6.2→ 77.3 −36.6→ 40.7 −29.5→ 11.2、
+    # 端面 5.11 から 9.8 → 最寄り中心 14.91）と画素計測で
+    # [15.0, 24.5, 34.0]（間隔 9.5）。short は本人明示「位置関係は
+    # ロング側と一緒」を鏡像適用し、写真 7466 の 10mm 注記
+    # （SW1 中心 128.45 → 外側端面 138.45）と SW64 の列一致から
+    # [109.5, 119.0, 128.5]。旧 §8 値は short で約 7mm の系統ずれ。
+    "short": [109.5, 119.0, 128.5],
+    "long":  [15.0, 24.5, 34.0],
 }
 # --- v2.1: フレームのパドルスロット（完成形 7354 準拠の横スロット） ---
 # 配置Bのバー（z 6.8〜9.5、幅 4.8）に上下 0.6 のクリアランスを加えた開口。
 # ブロック（羽根込み幅 8.7）はスロット幅 6.0 を通れないため保持が効く。
-PADDLE_SLOT_HW   = 3.0    # スロット半幅（タクト中心 ±3.0 → 幅 6.0）
-PADDLE_SLOT_Z0   = 6.2    # スロット下端（バー下端 6.8 - 0.6）
-PADDLE_SLOT_Z1   = 10.1   # スロット上端（バー上端 9.5 + 0.6）
-PADDLE_SLOT_X0   = 104.0  # スロット内側端 x（壁部中心に限定し内側は壁を残す）
+# v2.4.4 (§17.18): 実物で「全然はまらない」となり、当初はスロット
+# 余裕不足とみて y ±3.6（幅 7.2）、z 5.7〜10.6 に拡大した。その後の
+# 本人確認で、根本原因は高さ方向の前提違い（タクトは基板上面・
+# ボタン上向きで上面 z≈12.5、パドル側の要求位置と約 3.4〜4.2mm
+# 不一致）と判明し、本人決定で金属パドル自体を使わないことになった。
+# スロット／窓は今ラウンドでは残置する（次ラウンドのプランジャ
+# 実装時に壁へ戻し、タクト中心位置にプランジャ穴を開ける。§17.18）。
+PADDLE_SLOT_HW   = 3.6    # スロット半幅（タクト中心 ±3.6 → 幅 7.2）
+PADDLE_SLOT_Z0   = 5.7    # スロット下端（= PCB_BOT、フレーム下端まで開放）
+# v2.4.4 (§17.18): タクト実体ボックス（上面 z 7.3〜12.5）との干渉
+# 実測で、フレーム側はスロット上端より上の材料（z 10.6〜12.5）が
+# 約 33〜38mm3 当たることが判明した。タクトの逃げとして上端を
+# 13.2（先端 12.5 + 0.7）まで上げ、内側端も 102.0 に広げる。
+# この逃げは次ラウンドのプランジャ穴の土台になる。
+PADDLE_SLOT_Z1   = 13.2   # スロット上端（タクト先端 12.5 + 逃げ 0.7）
+PADDLE_SLOT_X0   = 102.0  # スロット内側端 x
 WIN_MERGE_GAP    = 3.0    # ボトム窓どうしの間隔がこれ未満なら連結する
                           # （窓間に残る細い歯・孤立フィンの除去、v2.1）
 
@@ -177,18 +200,39 @@ CAP_SCREW_KEEP = 1.5    # キャップから除外するネジ周りの余裕
 # 旧値 97.0/幅10 ではコネクタ（幅 8.9、中心 93.7）が片側 2.7mm 塞がれた。
 USB_XC   = 94.0         # USB開口中心 x（実測 93.7、両半分共通）
 USB_W    = 13.0         # USB開口幅（x方向。プラグ胴体の逃げ込み）
-USB_Z0, USB_Z1 = PCB_TOP + 2.5, PCB_TOP + 8.0
-# v2.4.3 (§17.17): 従来の開口カットは外面から 1mm しか入っておらず、
-# 端壁（内面まで約 4.2mm）の内側に 2.8mm のウェブが残って開口が
-# 貫通していなかった（実測で確定）。貫通カット＋プラグポケットで直す。
-USB_CUT_IN   = 7.0      # 貫通カットの内側への食い込み（外面基準）
-USB_POCKET_W = 22.0     # プラグポケット幅（x方向、開口中心 ±11）
-USB_POCKET_Z0 = 8.6     # プラグポケット下端（開口下端 9.8 の 1.2 下）
-USB_POCKET_D = 3.0      # プラグポケット深さ（外面から。残り壁約 1.4）
-# TRRS: 細いタブの中心 y を写真計測（short はタブ穴 (107.06,64.07) と整合、
-# long はタブ穴2個 y≈83.4/83.6 と整合）。旧値（外側端から 55）は
-# short で約 24mm、long で約 28mm ずれていた。
-TRRS_Y   = {"short": 64.5, "long": 83.5}   # TRRS開口中心 y（ケース座標、実測）
+# v2.4.4 (§17.18): 本人確定でマイコンは裏面実装（ソケットのある
+# 裏面側にヘッダで接続）。使うのは RP2040 の ProMicro 互換ボード
+# （33×18mm 級、基板厚 1.6 級、USB-C）で実物は未入手のため標準
+# 寸法ベース。ヘッダ／ソケット高さは 2.5 か 3mm か未確定（本人
+# 保留中）→ 3mm の方でも収まる余裕で仮設計する（推定扱い）。
+# スタック（基板裏 5.7 から下向き）: ヘッダ 3.0 ならモジュール
+# 基板 z[1.1, 2.7]、2.5 なら z[1.6, 3.2]。コネクタ（ミッドマウント
+# 前提）の中心は基板中心付近で z 1.5〜2.8、レセプタクル半高
+# 約 1.6 → 上端最大 約 4.4。よって開口は z 0〜4.5 とし、フレーム
+# （旧 z 9.8〜15.3、スイッチ側実装前提で誤り）からトレイ＋バンド
+# の端壁へ移す。フレーム側の旧開口とプラグポケットは廃止（壁に
+# 戻す）。プラグの金属シェル（Type-C 8.4×2.6 等）はコネクタ面
+# まで約 4.4mm の壁厚をシェル長（約 6.5）で届くため、外面
+# ポケットは設けない。
+USB_Z0, USB_Z1 = 0.0, 4.5   # 新開口の z 帯（トレイ全高＋バンド下部）
+USB_CUT_IN   = 6.5      # 開口カットの内側への食い込み（外面基準、壁厚約4.4＋余裕）
+# マイコン裏面実装の逃げ（トレイ床のポケット）: モジュール占有は
+# x 85〜103 / 端から約 33mm。モジュール基板下面はヘッダ 3.0 で
+# z=1.1、2.5 で z=1.6 となり床上面 (2.5) と干渉するため、床を
+# 0.3 まで彫る（基板下面との間隔 0.8〜1.3）。コネクタ帯（端寄り
+# 13mm）はコネクタ下面（最悪で z 0 付近〜僅かに下）まで逃げる
+# よう床を貫通させる。
+MCU_POCKET_X0, MCU_POCKET_X1 = 83.0, 105.0   # ポケット x 範囲
+MCU_POCKET_LEN = 38.0   # ポケットの端からの長さ（y方向）
+MCU_POCKET_FLOOR = 0.3  # ポケット床の残し厚
+MCU_DEEP_LEN   = 13.0   # 端寄りの貫通帯の長さ（コネクタ逃げ）
+# TRRS: v2.4.4 (§17.18) で本人の実物写真注記により再是正。旧値は
+# ジャックのピン列（はんだピン位置）であって軸ではなかった。
+# long: 写真 7465 の 91.2（階段端 171.6 から中心まで）＋画素計測
+# （中心 y≈80.1）で軸 80.3。short: 写真 7466 の 33.6 は SW25 穴
+# 左端 (30.38) → ピン線 (63.98、スキャン穴 64.07 と一致) で、
+# 軸はピン線から外側端方向へ long と同じ +3.1 → 67.2。
+TRRS_Y   = {"short": 67.2, "long": 80.3}   # TRRS開口中心 y（ケース座標、実測）
 TRRS_W   = 9.0          # TRRS開口幅（y方向）
 TRRS_Z0, TRRS_Z1 = PCB_TOP + 0.45, PCB_TOP + 5.85   # ジャック中心 = 基板表面+3.0
 
@@ -542,6 +586,7 @@ def seam_stair(outline_q, pcb, half):
         lev = steps[i][1] if i < 4 else None
         report.append(dict(name=names[i], kind="T", fixed=lev, out=sgn, face=f))
         chain.append(dict(kind="T", a=(xa, f), b=(xb, f), fixed=lev, out=sgn,
+                          back=(i == len(ranges) - 1 and half == "short"),
                           seg=LineString([(xa, f), (xb, f)])))
         print(f"[{half}] seam {names[i]}: tread x[{xa:.1f},{xb:.1f}] "
               f"{'pcb level ' + format(lev, '.2f') if lev is not None else 'back run (merged 5+6)'} "
@@ -639,8 +684,14 @@ def stair_disks(half):
 def stair_strip(chain, outline):
     """壁厚キャップを効かせる帯: 階段ラン列の全セグメントを
     (STAIR_WALL + CAP_STRIP_EXTRA) だけ膨らませ、外形と交差させた範囲。
-    背面リム（ネジ帯域）には届かないようラン列基準で限定する。"""
-    segs = [r["seg"] for r in chain]
+    背面リム（ネジ帯域）には届かないようラン列基準で限定する。
+    v2.4.4 (§17.18): short の背面ラン（T-back）はキャップ対象から
+    外す。背面ランは SEAM_BACK_EXT でフェイスを 2.0 延長してあり、
+    キャップが効くとキャビティまで 2.0 広がって T5（SW25 の段）の
+    クリアランスが 0.5 → 2.5 になっていた（試作で「最上段だけ
+    隙間が広い／段が浅い」の実物判定の原因）。背面ランは long と
+    同様に厚壁（4.2）のまま残す。"""
+    segs = [r["seg"] for r in chain if not r.get("back")]
     buf = unary_union([s.buffer(STAIR_WALL + CAP_STRIP_EXTRA) for s in segs])
     return largest(buf.intersection(outline))
 
@@ -1093,24 +1144,27 @@ def build_half(half):
     for tc in TACT_CENTERS[half]:
         frame = frame - box(PADDLE_SLOT_X0, xmax + 1, tc - PADDLE_SLOT_HW, tc + PADDLE_SLOT_HW,
                             PADDLE_SLOT_Z0, PADDLE_SLOT_Z1)
-    # USB開口（外側端の壁）。v2.4.3: 壁を貫通させる＋外面にプラグ
-    # ポケット（プラグ胴体が入る座ぐり）を追加（§17.17）。
-    if half == "short":
-        frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
-                            ymax - USB_CUT_IN, ymax + 2, USB_Z0, USB_Z1)
-        frame = frame - box(USB_XC - USB_POCKET_W / 2, USB_XC + USB_POCKET_W / 2,
-                            ymax - USB_POCKET_D, ymax + 2, USB_POCKET_Z0, USB_Z1)
-    else:
-        frame = frame - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
-                            -2, USB_CUT_IN, USB_Z0, USB_Z1)
-        frame = frame - box(USB_XC - USB_POCKET_W / 2, USB_XC + USB_POCKET_W / 2,
-                            -2, USB_POCKET_D, USB_POCKET_Z0, USB_Z1)
+    # USB開口は v2.4.4 (§17.18) でトレイ＋バンドの端壁へ移設した
+    # （裏面実装でコネクタが z 0〜3 に来るため）。フレーム側にあった
+    # 旧開口（z 9.8〜15.3）とプラグポケットは廃止し、壁に戻す。
+    # カットはトレイ／バンド構築側で行う。
     # TRRS開口（背面壁）
     frame = frame - box(xmax - 6.5, xmax + 1, trrs_y - TRRS_W / 2, trrs_y + TRRS_W / 2, TRRS_Z0, TRRS_Z1)
 
     # ---------- ネジ一覧（トレイ・バンド共通） ----------
     all_screws = [(e["x"], e["y"], BACK_SCREW_SPECS[e["size"]]) for e in back_screws]
     all_screws += [(e["x"], e["y"], BACK_SCREW_SPECS["M3"]) for e in hangs]
+
+    # ---------- USB開口（端壁）と MCU ポケットの y 範囲（v2.4.4, §17.18） ----------
+    if half == "short":
+        usb_ch_y = (ymax - USB_CUT_IN, ymax + 2)
+        mcu_pk_y = (ymax - MCU_POCKET_LEN, ymax + 0.5)
+        mcu_dp_y = (ymax - MCU_DEEP_LEN, ymax + 0.5)
+    else:
+        ymin = H["outline"].bounds[1]
+        usb_ch_y = (ymin - 2, ymin + USB_CUT_IN)
+        mcu_pk_y = (ymin - 0.5, ymin + MCU_POCKET_LEN)
+        mcu_dp_y = (ymin - 0.5, ymin + MCU_DEEP_LEN)
 
     # ---------- ボトムトレイ（黒、浅いトレイ: 床＋内側の造形） ----------
     tray = prism(outline, 0, FLOOR_T)
@@ -1119,7 +1173,25 @@ def build_half(half):
                              FLOOR_T - GROOVE_DEPTH, FLOOR_T + 0.05)
     # パドル窓の床部分（バンド側と共通の帯を抜く）
     for (sy0, sy1) in H["paddle_spans_bot"]:
+        # v2.4.4 (§17.18): 窓端と端壁の間に残る床の帯（約 9.5mm）が
+        # MCU ポケットの貫通帯と挟まれて孤立片（別ソリッド）になる
+        # ため、端まで 12mm 未満の帯は窓を端壁まで延長して切り取る
+        # （トレイのみ。バンドはリング連続性があり不要）。
+        ob = H["outline"].bounds
+        if half == "short" and ob[3] - sy1 < 12.0:
+            sy1 = ob[3] + 0.5
+        if half == "long" and sy0 - ob[1] < 12.0:
+            sy0 = ob[1] - 0.5
         tray = tray - box(PADDLE_WIN_X0, xmax + 1, sy0, sy1, -0.1, FLOOR_T + 0.1)
+    # MCUポケット（裏面実装の逃げ）: 床を MCU_POCKET_FLOOR まで彫り、
+    # コネクタ帯（端寄り MCU_DEEP_LEN）は床を貫通させる
+    tray = tray - box(MCU_POCKET_X0, MCU_POCKET_X1, mcu_pk_y[0], mcu_pk_y[1],
+                      MCU_POCKET_FLOOR, FLOOR_T + 0.1)
+    tray = tray - box(MCU_POCKET_X0, MCU_POCKET_X1, mcu_dp_y[0], mcu_dp_y[1],
+                      -0.1, FLOOR_T + 0.1)
+    # USB開口（端壁、トレイ分）: z USB_Z0〜USB_Z1 を端壁に通す
+    tray = tray - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
+                      usb_ch_y[0], usb_ch_y[1], USB_Z0 - 0.1, USB_Z1)
     # ネジ通し穴＋頭ザグリ（床の分。バンド帯域の逃げはバンド側で切る）
     for (sx, sy, spec) in all_screws:
         tray = tray - cyl(sx, sy, -0.1, spec["clr"], FLOOR_T + 0.2)
@@ -1152,6 +1224,9 @@ def build_half(half):
     for (sy0, sy1) in H["paddle_spans_bot"]:
         band = band - box(PADDLE_WIN_X0, xmax + 1, sy0, sy1,
                           FLOOR_T - SKIRT_DROP - 0.1, PCB_BOT + 0.1)
+    # USB開口（端壁、バンド分）: z USB_Z0〜USB_Z1 を端壁に通す（v2.4.4, §17.18）
+    band = band - box(USB_XC - USB_W / 2, USB_XC + USB_W / 2,
+                      usb_ch_y[0], usb_ch_y[1], USB_Z0 - 0.1, USB_Z1)
     # 背面ネジの逃げ（バンド帯域分。吊りボス用ネジは内側の空間を通るので不要）
     for e in back_screws:
         spec = BACK_SCREW_SPECS[e["size"]]

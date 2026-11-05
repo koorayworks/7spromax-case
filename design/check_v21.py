@@ -104,12 +104,15 @@ for half in HALVES:
 # ================= 3. パドル × パーツ =================
 print("== 3. paddle (arrangement B) vs tray/band/frame ==")
 def paddle_meshes(half, ci):
+    # 配置Bエンベロープ（2026-11-05 実測で更新, §17.18）: 全長 25.2 /
+    # ブロック長さ 8.2 / 高さ 8.6（z 1.0〜9.6）/ 羽根込み幅は安全側に
+    # 旧推定 8.7 / バー厚 2.8（z 6.8〜9.6、上面は天板と面一）
     H = bc.halves[half]
     c = bc.TACT_CENTERS[half][ci]
-    upper = boxm(101, 111, c - 4.35, c + 4.35, 7.7, 9.5)
-    legL = boxm(101, 111, c - 4.35, c - 2.4, 1.0, 7.7)
-    legR = boxm(101, 111, c + 2.4, c + 4.35, 1.0, 7.7)
-    bar = boxm(111, 128.3, c - 2.4, c + 2.4, 6.8, 9.5)
+    upper = boxm(101, 109.2, c - 4.35, c + 4.35, 7.8, 9.6)
+    legL = boxm(101, 109.2, c - 4.35, c - 2.4, 1.0, 7.8)
+    legR = boxm(101, 109.2, c + 2.4, c + 4.35, 1.0, 7.8)
+    bar = boxm(109.2, 126.2, c - 2.4, c + 2.4, 6.8, 9.6)
     env = trimesh.boolean.union([upper, legL, legR, bar], engine="manifold")
     return env, bar
 
@@ -124,7 +127,7 @@ for half in HALVES:
             c = bc.TACT_CENTERS[half][ci]
             for name, ang in (("tilt+", 2.5), ("tilt-", -2.5)):
                 e3 = env.copy()
-                T = trimesh.transformations.translation_matrix([111, c, 8.15])
+                T = trimesh.transformations.translation_matrix([109.2, c, 8.2])
                 R = trimesh.transformations.rotation_matrix(np.radians(ang), [0, 1, 0])
                 Ti = trimesh.transformations.translation_matrix([-111, -c, -8.15])
                 e3.apply_transform(T @ R @ Ti)
