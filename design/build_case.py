@@ -1311,6 +1311,29 @@ def build_half(half):
         frame = frame - box(L21_CX - L21_NOTCH_HALF, L21_CX + L21_NOTCH_HALF,
                             L21_CY - L21_NOTCH_HALF, L21_CY + L21_NOTCH_HALF,
                             PCB_BOT - 0.1, L21_FRAME_Z1)
+    # ---------- v2.4.7 (§17.21): タクト列端の全高壁の切り上げ ----------
+    # 本人の実物観察: 角ピースで、タクト列の端の壁だけが基板下面
+    # （z 5.7 = 基板上面 7.3 − 基板厚 1.6）まで降りていて「基板の
+    # ぶん厚い」。実測でも、タクト帯（x >= PADDLE_SLOT_X0）の列端側
+    # ではフレームが z 5.7〜16.1 の全高で残る一方、一般部の内壁は
+    # 下帯キャビティ上端 z 9.55（= PLATE_BOT + 0.05）で止まる。
+    # 原因は生成方法の副産物: 基板端より先（short: y > 基板端 + 0.5、
+    # long: y < 基板端 − 0.5）ではキャビティが届かず、生成ブロック
+    # （prism(outline, PCB_BOT, FRAME_TOP)）がそのまま残る。意図した
+    # 構造壁ではないため、タクト帯の x 範囲に限り、基板端より先の
+    # 領域で z 9.55 より下を切り上げる。背面ネジは y <= ymax-6 かつ
+    # パドル帯域を避けて計画され、この領域には入らない（plan_screws
+    # の y_excluded）。屋根・連結帯は z >= 13.2 で無関係、上部
+    # （9.55〜16.1）は背面壁・天面と連続するため単一性は保たれる。
+    pcb_b = H["pcb"].bounds
+    if half == "short":
+        end_y0, end_y1 = pcb_b[3] + CAV_CLR, ymax + 1
+    else:
+        end_y0, end_y1 = outline.bounds[1] - 1, pcb_b[1] - CAV_CLR
+    frame = frame - box(PADDLE_SLOT_X0, xmax + 1, end_y0, end_y1,
+                        PCB_BOT - 0.1, PLATE_BOT + 0.05)
+    print(f"[{half}] tact-end wall cut-up: x>={PADDLE_SLOT_X0} "
+          f"y[{end_y0:.2f},{end_y1:.2f}] z<{PLATE_BOT + 0.05:.2f} removed")
 
     # ---------- ネジ一覧（トレイ・バンド共通） ----------
     all_screws = [(e["x"], e["y"], BACK_SCREW_SPECS[e["size"]]) for e in back_screws]
