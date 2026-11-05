@@ -107,6 +107,17 @@ MIN_WALL       = 0.8    # キャビティがケース外形へ食い出すのを
                         # 階段の歯・背面タブ先端など、実測基板が外形に 1.7mm 未満まで
                         # 迫る箇所ではこのガードが効いてクリアランスが 0.5 を下回る
                         # （該当箇所と最小値はビルド時に表示し DESIGN_NOTES に記録）
+# --- v2.4.6 (§17.20): 階段帯のみクリアランス拡大＋蹴上クリップ解消 ---
+# v2.4.4 試作の実物確認で「階段がきつい／基板が乗っかる」が両半分で
+# 出た。切り分け: (a) バンド側キャビティは MIN_WALL クリップが階段の
+# 蹴上面で cavity_q を 0.8 削り、蹴上クリアランスが -0.8（干渉）に
+# なっていた。(b) 踏面側も公称 0.5 が印刷収縮等で実効 0〜0.2 まで目減り
+# していた。対策として階段帯に限ってクリアランスを 0.8 に広げ、
+# 同帯では MIN_WALL クリップを外す（外形フェイスとドッキングは
+# 変えない。階段の壁は 2.2 → 1.9 になる）。
+STAIR_CAV_CLR  = 0.8    # 階段帯の基板→キャビティ片側クリアランス
+STAIR_ZONE_PAD = 3.2    # 拡大帯: 階段プロファイル線からこの距離以内
+                        # （stair_strip との和集合を取る）
 LEDGE_UNDER    = 1.5    # 基板支持レッジが基板縁の下へ潜る量
 LEDGE_EMBED    = 0.3    # レッジ外周をキャビティ壁側へ食い込ませる量（融合確保）
 LEDGE_Z0       = 4.4    # レッジ下端（グロー帯上端と一致させ干渉を避ける）
@@ -162,7 +173,13 @@ TACT_CENTERS   = {      # タクト中心 y（ケース座標）
 # 不一致）と判明し、本人決定で金属パドル自体を使わないことになった。
 # スロット／窓は今ラウンドでは残置する（次ラウンドのプランジャ
 # 実装時に壁へ戻し、タクト中心位置にプランジャ穴を開ける。§17.18）。
-PADDLE_SLOT_HW   = 3.6    # スロット半幅（タクト中心 ±3.6 → 幅 7.2）
+PADDLE_SLOT_HW   = 4.0    # スロット半幅（タクト中心 ±4.0 → 幅 8.0）。
+                          # v2.4.6 (§17.20) で 3.6（幅 7.2）から拡大:
+                          # タクト幅 6.0 に片側 1.0、プランジャフランジ
+                          # Ø7 に片側 0.5 を確保する。実物では窓中心と
+                          # タクト中心に約 1mm 級の系統ずれが見られ
+                          # （§17.20）、幅 7.2 では片側 0.6 の余裕を
+                          # 食い潰して「開口が小さい」症状になっていた。
 PADDLE_SLOT_Z0   = 5.7    # スロット下端（= PCB_BOT、フレーム下端まで開放）
 # v2.4.4 (§17.18): タクト実体ボックス（上面 z 7.3〜12.5）との干渉
 # 実測で、フレーム側はスロット上端より上の材料（z 10.6〜12.5）が
@@ -227,6 +244,35 @@ PLUNGER_TOTAL_H  = (PLUNGER_CAP_T + PLUNGER_SHAFT_L
 PLUNGER_STRIP_X0 = 102.0  # 連結帯の内側面 x
 PLUNGER_STRIP_X1 = 104.6  # 連結帯の背面側面 x（キャビティ縁 104.5 へ重ねる）
 PLUNGER_STRIP_YM = 6.0    # 帯の y 余長（タクト列の両端から）
+
+# --- v2.4.6 (§17.20): タクトまわりの局所逃げ 2 件 ---
+# (1) プレート背面縁のタクト逃げノッチ。§17.18 未確認#3 のプレート×
+# タクト重なり（タクト幅 6.0 モデルで全タクト 7〜11mm3、プレート縁が
+# x 103.5〜107.2 の帯でタクト上にかかる分）を、タクト中心ごとに背面縁
+# から切り欠いて解消する。x 範囲は重なり帯＋中心ずれ余裕（±1 級）。
+# 最寄りのスイッチ穴列（x=93.72、穴縁 100.80）との間に 1.7 の壁が残る。
+TACT_NOTCH_X0  = 102.5  # ノッチ内側端 x（プレート背面縁から切り欠く）。
+                          # タクト実体ボックス内側端（103.5）まで 1.0 の
+                          # 逃げ。最寄り穴列（x=93.72、穴縁 100.80）との
+                          # 壁は 1.7。当初 101.5 で切ると隣接穴のリング
+                          # サポート（半径 8.2 のサンプル x=101.9）が
+                          # 20/24 → 17/24 に落ちたため 102.5 に詰めた
+                          # （§17.20 検証で両立を確認）。
+TACT_NOTCH_X1  = 111.5  # ノッチ外側端 x（プレート縁を超えて開口させる）
+TACT_NOTCH_HW  = 4.0    # ノッチ半幅（タクト中心 ±4.0。幅 6.0＋ずれ余裕）
+# (2) L21 逃げノッチ（long のみ）。階段最上段の角スイッチ L21
+# （中心 93.70, 167.52）は 14.0 角の占有域が歯の踏面（y=171.60）を
+# 2.92 越え、フレーム内壁を 2.42 突き破る（§17.20 切り分け）。
+# 14.0 角＋0.3 余裕の箱でフレーム下帯（z 5.7〜9.55）とバンドレッジ帯
+# （z 4.4〜5.7）を局所的に切り欠く。外形フェイス自体は変えない
+# （箱は実在材料の範囲でのみ効く）。
+L21_CX, L21_CY = 93.70, 167.52   # L21 中心（DXF 穴中心、§17.20）
+L21_NOTCH_HALF = 7.15            # ノッチ半幅（14.3 角相当 = 14.0 + 全幅 0.3 余裕）
+L21_FRAME_Z1   = 11.0            # フレーム側ノッチ上端（= PLATE_TOP）。
+                                 # 当初 9.55（プレート下面）で切ったところ、
+                                 # プレート帯 z 9.55〜11.0 の角に 4.5mm3 の
+                                 # 食い込みが残ったため（§17.20 検証）、
+                                 # スイッチ占有域の全高まで広げた。
 WIN_MERGE_GAP    = 3.0    # ボトム窓どうしの間隔がこれ未満なら連結する
                           # （窓間に残る細い歯・孤立フィンの除去、v2.1）
 
@@ -1033,6 +1079,25 @@ def build_half(half):
     back_screws, hangs = plan_screws(half, plate_bnd, cavity)
     H["back_screws"], H["hangs"] = back_screws, hangs
 
+    # ---------- v2.4.6 (§17.20): 階段帯クリアランス拡大＋蹴上クリップ解消 ----------
+    # 階段帯（キャップ用ストリップ＋基板階段プロファイル近傍）に限って
+    # キャビティを基板+0.8 まで広げ、同帯では MIN_WALL クリップを
+    # 外す（蹴上クリアランス -0.8 → +0.8、踏面 0.5 → 0.8）。
+    # ネジ計画（plan_screws）は従来どおり拡大前のキャビティで確定済み
+    # （v2.4.5 と同一配置を保つ）。外形フェイスは変えない。
+    stair_zone = unary_union(
+        [stair_strip(H["chain"], outline),
+         stair_profile_line(half).buffer(STAIR_ZONE_PAD)]).intersection(outline)
+    stair_cav = outset(pcb, STAIR_CAV_CLR, round_join=True) \
+        .intersection(stair_zone)
+    if not stair_cav.is_empty and stair_cav.area > 0:
+        cavity_full = largest(unary_union([cavity_full, stair_cav]))
+        cavity = largest(unary_union([cavity, stair_cav]))
+        H["cavity_full"], H["cavity"] = cavity_full, cavity
+        print(f"[{half}] stair clearance {CAV_CLR} -> {STAIR_CAV_CLR} "
+              f"in stair zone (added {stair_cav.area:.1f} mm2, "
+              f"MIN_WALL clip exempted in zone)")
+
     # ---------- v2.3: 階段壁厚キャップ（§17.12、本人決定） ----------
     # 階段帯では「外形から STAIR_WALL より深い領域」をキャビティへ和集合
     # し、壁厚を STAIR_WALL 以下に制限する（段差の形に沿って概ね均一な
@@ -1053,6 +1118,10 @@ def build_half(half):
             cavity_full = largest(unary_union([cavity_full, deep]))
             cavity = largest(unary_union([cavity, deep])
                              .intersection(inset(outline, MIN_WALL)))
+            # v2.4.6: 上の MIN_WALL クリップが階段帯の拡大分まで削る
+            # ため、階段帯だけクリップ後に再適用する（蹴上解消の維持）
+            if not stair_cav.is_empty and stair_cav.area > 0:
+                cavity = largest(unary_union([cavity, stair_cav]))
             H["cavity_full"], H["cavity"] = cavity_full, cavity
             print(f"[{half}] stair wall cap: deep area={deep.area:.1f} mm2 "
                   f"merged into cavity (stair wall <= {STAIR_WALL} mm)")
@@ -1174,6 +1243,15 @@ def build_half(half):
         plate = plate + cyl(e["x"], e["y"], HANG_BOT, HANG_DIA,
                             PLATE_BOT - HANG_BOT + HANG_OVERLAP)
         plate = plate - cyl(e["x"], e["y"], HANG_BOT - 0.1, HANG_TAP_DIA, HANG_TAP_DEPTH)
+    # v2.4.6 (§17.20): プレート背面縁のタクト逃げノッチ。プレート縁が
+    # タクト実体（幅 6.0 モデル）上にかかる重なり（全タクト 7〜11mm3、
+    # §17.18 未確認#3）を、タクト中心ごとの局所切り欠きで解消する。
+    # 吊りボスは MCU ゾーン（タクト帯を含む）を避けて配置されるため
+    # ノッチと干渉しない（検証は check 側で実施）。
+    for tc in TACT_CENTERS[half]:
+        plate = plate - box(TACT_NOTCH_X0, TACT_NOTCH_X1,
+                            tc - TACT_NOTCH_HW, tc + TACT_NOTCH_HW,
+                            PLATE_BOT - 0.2, PLATE_TOP + 0.2)
 
     # ---------- トップフレーム（枠） ----------
     ch = outset(plate_bnd, PLATE_CLR)     # プレート帯域の内壁
@@ -1225,6 +1303,14 @@ def build_half(half):
     # カットはトレイ／バンド構築側で行う。
     # TRRS開口（背面壁）
     frame = frame - box(xmax - 6.5, xmax + 1, trrs_y - TRRS_W / 2, trrs_y + TRRS_W / 2, TRRS_Z0, TRRS_Z1)
+    # v2.4.6 (§17.20): L21 逃げノッチ（long のみ）。階段最上段の角
+    # スイッチ L21 の占有域（14.0 角）がフレーム下帯内壁を 2.42mm
+    # 突き破るため、14.3 角相当の箱で z 5.7〜11.0（下帯＋プレート帯）
+    # を切り欠く。プレート自体の穴（14.15）はそのまま受ける。
+    if half == "long":
+        frame = frame - box(L21_CX - L21_NOTCH_HALF, L21_CX + L21_NOTCH_HALF,
+                            L21_CY - L21_NOTCH_HALF, L21_CY + L21_NOTCH_HALF,
+                            PCB_BOT - 0.1, L21_FRAME_Z1)
 
     # ---------- ネジ一覧（トレイ・バンド共通） ----------
     all_screws = [(e["x"], e["y"], BACK_SCREW_SPECS[e["size"]]) for e in back_screws]
@@ -1348,6 +1434,13 @@ def build_half(half):
                             band = band + prism(g, FLOOR_T, PCB_BOT)
                             print(f"[{half}] fin web: screw ({e['x']:.2f},{e['y']:.0f}) "
                                   f"span end {end:.2f} area={g.area:.1f}")
+    # v2.4.6 (§17.20): L21 逃げノッチ（バンド側、long のみ）。L21 の
+    # 基板裏ソケットがレッジ帯（z 4.4〜5.7）の内壁へ食い込む分を、
+    # フレーム側と同じ 14.3 角相当の箱で切り欠く。
+    if half == "long":
+        band = band - box(L21_CX - L21_NOTCH_HALF, L21_CX + L21_NOTCH_HALF,
+                          L21_CY - L21_NOTCH_HALF, L21_CY + L21_NOTCH_HALF,
+                          LEDGE_Z0, PCB_BOT + 0.1)
 
     return dict(plate=plate, frame=frame, tray=tray, band=band)
 
