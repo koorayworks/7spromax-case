@@ -11,11 +11,22 @@
 もの（本人の指示「つなげたやつじゃないとわからん」）。
 バンドだけは背面壁が断片的なため幅いっぱいの切り出し。
 
-各ピースには番号を浮き彫りで入れる（本人の指示「試作片が
-パズルすぎて難しい」）。番号はガイド図と一致させる:
+番号（ガイド図と一致させる）:
   1=階段バンド(short) 2=帯トレイ(short) 3=帯バンド(short)
   4=帯フレーム(short) 5=階段バンド(long) 6=帯トレイ(long)
   7=帯バンド(long) 8=帯フレーム(long)。プランジャは無印。
+v2.4.12 では全ピースに番号を浮き彫りで入れたが、v2.4.13
+（§17.27）で 1・3・5・7（階段バンドと背面帯バンド）の
+浮き彫りを撤回した。当てるときに 180 度回すと数字の
+出っ張りが当て面に来て邪魔になる、との本人報告による。
+この 4 ピースは無地で、ガイド図の並びと形で見分ける。
+残りの浮き彫りは面を検証してから残す。フレーム（4・8）は
+外側端面（当て面でもベッド面でもない）にあることを検証
+した。トレイは床上面（基板裏面との間に隙間が残る面）で
+ソケット包絡を避けた位置を探したが、long（6）は置けた
+一方、short（2）は帯の床がソケット包絡で埋まり、数字の
+天面（z=3.0）がソケット下面（z=2.7 仮定）に届く置き場が
+無かったため外した（§17.27）。
 
 サポートなし印刷のための向き（§17.26）:
   - 帯フレームは天地を逆にして並べる（天面をベッド側に付け、
@@ -49,6 +60,10 @@ GROUPS = {
                      ("trial_back_frame_long", 8, "帯フレーム（右）", True)], 3),
 }
 TRRS_Y = {"short": 67.2, "long": 80.3}
+
+# v2.4.13 (§17.27): 浮き彫りを入れない番号（バンド類。
+# 180 度回して当てると数字の出っ張りが邪魔になるため）
+NO_DIGIT_NUMBERS = {1, 3, 5, 7}
 
 
 def load_solids(path):
@@ -265,15 +280,101 @@ def flip_frame(mesh):
     return m
 
 
+# ---------------- 残す数字の面チェック（v2.4.13） ----------------
+
+import csv as _csv
+from shapely.geometry import box as _shp_box
+
+SOCKET_CSV = "/home/hatch/workspace/7spromax-case/template/pcb_sockets.csv"
+SOCK_Z0 = 2.7   # ソケット下面（基板裏面 5.7 − 張り出し 3.0 仮定、§17.23）
+
+
+def socket_squares(half):
+    """ソケット位置の 14mm 角プロキシ（§17.23 で使う最も
+    保守的な包絡。check_socket_ledge.load_sockets と同じ読み）。"""
+    out = []
+    for row in _csv.DictReader(open(SOCKET_CSV)):
+        if row["half"] != half or row["kind"] not in ("square", "tall"):
+            continue
+        if row["method"] == "dome_centroid" and row["meas_x_mm"]:
+            x, y = float(row["meas_x_mm"]), float(row["meas_y_mm"])
+        else:
+            x, y = float(row["dxf_x_mm"]), float(row["dxf_y_mm"])
+        out.append(_shp_box(x - 7.0, y - 7.0, x + 7.0, y + 7.0))
+    return out
+
+
+def digit_solid(orig, embossed):
+    """浮き彫りで増えた分だけのソリッド（manifold 差分）。"""
+    d = trimesh.boolean.difference([embossed, orig], engine="manifold")
+    if isinstance(d, trimesh.Scene):
+        d = trimesh.util.concatenate(tuple(d.geometry.values()))
+    return d
+
+
+def digit_hits_socket(diff, half, margin=0.3):
+    """数字の xy 範囲（margin 拡大）がソケット包絡に触れるか。
+    数字の天面 z=3.0 はソケット下面 z=2.7 より上なので、
+    xy で重なれば実干渉になる。"""
+    if diff is None or len(diff.faces) == 0:
+        return True
+    b = diff.bounds
+    rect = _shp_box(b[0, 0] - margin, b[0, 1] - margin,
+                    b[1, 0] + margin, b[1, 1] + margin)
+    return any(rect.intersects(s) for s in socket_squares(half))
+
+
+def _flip_rigid(mesh, ref_bounds):
+    """flip_frame と同じ剛体変換だけを行う（z 再着座なし）。
+    ref_bounds は変換中心を決める基準メッシュの bounds。"""
+    cy = (ref_bounds[0, 1] + ref_bounds[1, 1]) / 2
+    cz = (ref_bounds[0, 2] + ref_bounds[1, 2]) / 2
+    m = mesh.copy()
+    m.apply_translation([0, -cy, -cz])
+    m.apply_transform(trimesh.transformations.rotation_matrix(
+        np.pi, [1, 0, 0]))
+    m.apply_translation([0, cy, cz])
+    return m
+
+
 def emboss_piece(name, mesh, number):
-    """ピース種別ごとの方針で番号を入れる。"""
+    """ピース種別ごとの方針で番号を入れる。
+    トレイはソケットを避けられる置き場が無ければ None を返す。"""
     text = str(number)
     half = "short" if name.endswith("_short") else "long"
     if "tray" in name:
-        out = try_top_digit(mesh, text, 2.5,
-                            preferred=(95.0, TRRS_Y[half] + 30.0))
-        assert out is not None, f"{name}: tray digit placement failed"
-        return out
+        # 床上面（z=2.5）に置く。既定位置がソケット包絡に
+        # 触れる場合は候補点を変えて置き直す（v2.4.13）。
+        prefs = [(95.0, TRRS_Y[half] + 30.0)]
+        b = mesh.bounds
+        for px in np.arange(b[0, 0] + 9, b[1, 0] - 8, 11.0):
+            for py in np.arange(b[0, 1] + 9, b[1, 1] - 8, 11.0):
+                prefs.append((float(px), float(py)))
+        rejected = []
+        tried = 0
+        for pref in prefs:
+            if tried >= 15:
+                break
+            out = try_top_digit(mesh, text, 2.5, preferred=pref)
+            if out is None:
+                continue
+            tried += 1
+            d = digit_solid(mesh, out)
+            db = d.bounds
+            key = tuple(np.round(db[:, :2].ravel(), 1))
+            if key in rejected:
+                continue
+            print(f"    tray digit bbox x[{db[0,0]:.1f},{db[1,0]:.1f}] "
+                  f"y[{db[0,1]:.1f},{db[1,1]:.1f}] "
+                  f"z[{db[0,2]:.2f},{db[1,2]:.2f}] (socket bottom "
+                  f"z={SOCK_Z0})")
+            if not digit_hits_socket(d, half):
+                print("    tray digit: clear of socket envelopes")
+                return out
+            rejected.append(key)
+            print("    tray digit overlaps a socket envelope; retry")
+        print(f"    tray digit: no socket-clear spot for {name}")
+        return None
     if "band" in name:
         out = try_top_digit(mesh, text, 3.8)
         if out is not None:
@@ -297,6 +398,27 @@ def emboss_piece(name, mesh, number):
             mesh, text, axis=1, side=side, v_center=5.2, height=4.0,
             basis_override=(u_pre, np.array([0.0, 0.0, -1.0])))
         assert out is not None, f"{name}: frame digit placement failed"
+        # v2.4.13: 数字が外側端面（y 端の垂直面）にあり、反転後も
+        # ベッド面（z=0）に来ないことを、増分ソリッドで検証する
+        d = digit_solid(mesh, out)
+        db, b = d.bounds, mesh.bounds
+        pro_hi = db[1, 1] - b[1, 1]   # +y 側への出っ張り
+        pro_lo = b[0, 1] - db[0, 1]   # -y 側への出っ張り
+        on_end = (0.25 <= pro_hi <= 0.7) != (0.25 <= pro_lo <= 0.7)
+        z_in = db[0, 2] > b[0, 2] + 1.0 and db[1, 2] < b[1, 2] - 1.0
+        fd = _flip_rigid(d, out.bounds)
+        fo = _flip_rigid(out, out.bounds)
+        fz = fd.bounds[0, 2] - fo.bounds[0, 2]   # 反転後の数字の下端 z
+        fb = flip_frame(out).bounds
+        fdb = fd.bounds
+        end_after = min(abs(fdb[0, 1] - fb[0, 1]),
+                        abs(fdb[1, 1] - fb[1, 1])) <= 0.75
+        print(f"    frame digit: protrude +y={pro_hi:.2f} -y={pro_lo:.2f} "
+              f"z[{db[0,2]:.1f},{db[1,2]:.1f}] on_end={on_end} "
+              f"z_inside={z_in} flipped_zmin={fz:.2f} "
+              f"end_after_flip={end_after}")
+        assert on_end and z_in and fz > 0.5 and end_after, \
+            f"{name}: frame digit face check failed"
         return flip_frame(out)
     raise ValueError(name)
 
@@ -378,6 +500,7 @@ def pack(pieces):
 
 
 LABELS = {}   # label -> (番号 or None, 表示名, 下にする面の説明)
+DIGIT_DROPPED = []   # 置き場が無くて浮き彫りを外したピース（v2.4.13）
 
 
 def main():
@@ -390,7 +513,16 @@ def main():
             solids = load_solids(f"{BASE}/{name}.stl")
             assert len(solids) == 1, f"{name}: solids={len(solids)}"
             print(f"== {name} (#{number}) ==")
-            m = emboss_piece(name, solids[0], number)
+            if number in NO_DIGIT_NUMBERS:
+                m = solids[0]
+                print("   digit: none (v2.4.13 plain)")
+            else:
+                m = emboss_piece(name, solids[0], number)
+                if m is None:
+                    m = solids[0]
+                    DIGIT_DROPPED.append(name)
+                    print(f"   digit: DROPPED for {name} "
+                          "(no socket-clear flat spot)")
             label = f"{name}#0"
             LABELS[label] = (number, disp,
                              "天面を下に（逆さ）" if is_frame else "底面を下に")
@@ -455,17 +587,22 @@ def main():
         ax.set_aspect("equal")
         ax.grid(alpha=0.25)
         ax.set_title(f"{out_name}.stl ({len(placed)} ピース)")
-    fig.suptitle("試作ピースの並び方 v2.4.12（番号はピースに彫ってあります）",
+    fig.suptitle("試作ピースの並び方 v2.4.13"
+                 "（4・6・8 はピースに番号あり、他は無地）",
                  fontsize=14)
-    fig.text(0.5, 0.015,
+    fig.text(0.5, 0.008,
+             "番号の浮き彫りは 4・6・8 のピースにだけあります。"
+             "1・2・3・5・7 は無地なので、この図の並びと形で見分けて"
+             "ください。\n"
              "重ね方: トレイ → バンド → 基板 → フレーム の順。帯フレーム"
              "（4・8）は天面を下にして印刷します。\n"
              "小ボタンは、フレームをかぶせた後からでも、後ろ側の差し込み口へ"
              "横に差し込めます（平らに切れた面を後ろに向ける）。",
              ha="center", fontsize=10.5)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     fig.savefig(f"{BASE}/guide_trial_all_v22.png", dpi=110)
     print("saved guide_trial_all_v22.png")
+    print(f"DIGIT_DROPPED: {DIGIT_DROPPED}")
 
 
 if __name__ == "__main__":
