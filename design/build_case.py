@@ -169,6 +169,42 @@ TACT_CENTERS   = {      # タクト中心 y（ケース座標）
     # ロング側と一緒」を鏡像適用し、写真 7466 の 10mm 注記
     # （SW1 中心 128.45 → 外側端面 138.45）と SW64 の列一致から
     # [109.5, 119.0, 128.5]。旧 §8 値は short で約 7mm の系統ずれ。
+    # v2.4.14 (§17.28): バンド基準の本人実測（フレームをタクトに
+    # 合わせると、正しく座るバンドに対して 1.8〜2.0mm ずれる、
+    # 写真 7501。ピースは v2.4.12 の帯フレームで現行形状と同一
+    # と本人確認済み）で、short だけ外側端方向へ 1.9 是正する
+    # （暫定値。最終確定は 1.5/1.9/2.3 の 3 段階の角ピース試作で
+    # 決める、§17.28）。short の §17.18 値は対称性からの導出で
+    # 直接実測がなく、誤差が残る候補だった。一方 long は写真
+    # 注記チェーンによる直接導出で、実物の当たりも「よさげ」と
+    # 確認済み、スキャンの blob 値も系統ずれを示さないため
+    # 変更しない。TACT_X（奥行き）は本人のノギス実測（背面
+    # フチから 0.5+3.4/2）が直接の根拠で、1.9 の x ずれは
+    # スキャン・写真とも裏付けがないため変更しない（§17.28）。
+    "short": [111.4, 120.9, 130.4],
+    "long":  [15.0, 24.5, 34.0],
+}
+# 試作バリエーション（§17.28）: 環境変数 TACT_VARIANT_STEP
+# （例 1.5）を渡すと、short の中心を v2.4.13 値＋STEP に差し替え、
+# 角ピースだけを trial_tact_frame_short_s<STEPx10>.stl に書き出す。
+import os as _os
+_VARIANT_STEP = _os.environ.get("TACT_VARIANT_STEP")
+_VARIANT_DX = _os.environ.get("TACT_VARIANT_DX")
+if _VARIANT_STEP:
+    _step = float(_VARIANT_STEP)
+    TACT_CENTERS["short"] = [109.5 + _step, 119.0 + _step,
+                             128.5 + _step]
+    print(f"[variant] short tact centers shifted +{_step}: "
+          f"{TACT_CENTERS['short']}")
+if _VARIANT_DX:
+    print(f"[variant] short TACT_X delta {_VARIANT_DX} "
+          "(applied after TACT_X definition)")
+# パドル窓（トレイ／バンド）とネジ計画の除外帯は v2.4.13 までの
+# 中心で確定済みとし、§17.28 の中心是正では動かさない。窓は
+# 幅に余裕があり（合成帯 short 104.1〜133.9 に対し是正後の
+# タクト実体は 108.4〜133.4 で内側）、実物でもバンド・トレイの
+# 当たりは良好と確認済みのため（§17.28）。
+PADDLE_SPAN_CENTERS = {
     "short": [109.5, 119.0, 128.5],
     "long":  [15.0, 24.5, 34.0],
 }
@@ -219,6 +255,9 @@ TACT_EDGE_IN     = 2.2    # 背面フチ → タクト中心（= 0.5 + 3.4/2）
 TACT_BACK_X      = {"short": 113.77, "long": 113.24}  # 背面プレーン
 TACT_X           = {h: TACT_BACK_X[h] - TACT_EDGE_IN
                     for h in ("short", "long")}       # 111.57 / 111.04
+if _VARIANT_DX:   # 試作グリッド用（§17.28）: short の奥行きをずらす
+    TACT_X["short"] += float(_VARIANT_DX)
+    print(f"[variant] short TACT_X -> {TACT_X['short']:.2f}")
 TACT_W_X         = 3.4    # タクト実体の奥行き x（実測、§17.26）
 TACT_W_Y         = 6.0    # タクト実体の幅 y（実測、§17.20 で確定済み）
 # フレーム側の受け（タクト中心に同軸）:
@@ -941,7 +980,7 @@ for half in ("short", "long"):
 # パドル窓の帯（タクト中心 ±（羽根込み幅/2 + クリアランス））をマージした区間
 def merged_spans(half):
     hw = PADDLE_WING_W / 2 + PADDLE_CLR
-    spans = sorted((c - hw, c + hw) for c in TACT_CENTERS[half])
+    spans = sorted((c - hw, c + hw) for c in PADDLE_SPAN_CENTERS[half])
     out = []
     for a, b in spans:
         if out and a <= out[-1][1]:
@@ -1743,6 +1782,8 @@ def normalize(part, name):
     return fuse_solids(kept)
 
 def export(part, name):
+    if _VARIANT_STEP and not name.startswith("trial_tact_frame_short"):
+        return f"{OUTDIR}/{name}.stl (skipped in variant mode)"
     fused = normalize(part, name)
     ns = len(fused.solids())
     zmin = fused.bounding_box().min.Z
@@ -1879,5 +1920,23 @@ for half, yr in (("short", (TRRS_Y["short"] - 13.0, 146.4)),
         print(f"[trial] trial_back_band_{half}: kept largest of "
               f"{len(band_solids)} solids (back ribbon island dropped)")
     export(band_clip, f"trial_back_band_{half}")
+
+# 3) タクト角だけの小ピース（両半分、フレームのみ）v2.4.14 (§17.28)。
+#    本人指示「この部分だけで試作しよう」を受け、背面帯一式から
+#    タクト角まわりだけを切り出したもの。x は背面帯と同じ
+#    80〜117.3、y は全タクト（是正後の中心 ±スロット・屋根余裕）
+#    と外側端壁を含む範囲。TRRS 帯（short 67.2 / long 80.3）は
+#    含まないため、帯フレームで報告のあった TRRS 干渉の論点は
+#    このピースには存在しない。
+for half, yr in (("short", (100.0, 146.4)), ("long", (-3.0, 43.0))):
+    if _VARIANT_STEP:
+        if half == "short":
+            _vn = f"trial_tact_frame_short_s{int(float(_VARIANT_STEP) * 10)}"
+            if _VARIANT_DX:
+                _vn += f"_x{int(abs(float(_VARIANT_DX)) * 10)}"
+            export(clip(results[half]["frame"], (80, 117.3), yr), _vn)
+        continue
+    export(clip(results[half]["frame"], (80, 117.3), yr),
+           f"trial_tact_frame_{half}")
 
 print("DONE")

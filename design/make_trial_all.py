@@ -50,14 +50,10 @@ GAP = 3.05
 
 # (ピース名, 番号, 表示名, フレーム反転するか)
 GROUPS = {
-    "trial_all_1": ([("trial_stair_band_short", 1, "階段バンド（左）", False),
-                     ("trial_back_tray_short", 2, "帯トレイ（左）", False),
-                     ("trial_back_band_short", 3, "帯バンド（左）", False),
-                     ("trial_back_frame_short", 4, "帯フレーム（左）", True)], 3),
-    "trial_all_2": ([("trial_stair_band_long", 5, "階段バンド（右）", False),
-                     ("trial_back_tray_long", 6, "帯トレイ（右）", False),
-                     ("trial_back_band_long", 7, "帯バンド（右）", False),
-                     ("trial_back_frame_long", 8, "帯フレーム（右）", True)], 3),
+    # v2.4.14 (§17.28): 本人指示で試作はフレームのタクト角だけに
+    # 絞る。各ファイル = 角フレーム 1 + プランジャ 3。
+    "trial_all_1": ([("trial_tact_frame_short", 4, "タクト角フレーム（左）", True)], 3),
+    "trial_all_2": ([("trial_tact_frame_long", 8, "タクト角フレーム（右）", True)], 3),
 }
 TRRS_Y = {"short": 67.2, "long": 80.3}
 
@@ -267,6 +263,33 @@ def try_face_digit(mesh, text, axis, side, v_center, height,
     return out if ok else None
 
 
+def rotate_band_180(mesh):
+    """バンド類を平面内で 180° 回す（v2.4.14 §17.28 の恒常ルール:
+    本人がスライサーで毎回回している向きに合わせる）。z は変えない。"""
+    b = mesh.bounds
+    cx, cy = (b[0, 0] + b[1, 0]) / 2, (b[0, 1] + b[1, 1]) / 2
+    m = mesh.copy()
+    m.apply_translation([-cx, -cy, 0])
+    m.apply_transform(trimesh.transformations.rotation_matrix(
+        np.pi, [0, 0, 1]))
+    m.apply_translation([cx, cy, 0])
+    m.apply_translation([0, 0, -m.bounds[0, 2]])
+    return m
+
+
+def lay_plunger_side(mesh):
+    """プランジャを 90° 横倒しにする（v2.4.14 §17.28 の恒常ルール）。
+    下にする面は、背面クリップでできた平らな面（D 字の平面、
+    キャップとフランジの背面側）。印刷座標 +x がその平面の
+    法線なので、y 軸 +90° 回転で +x を下 (-z) に向ける。
+    軸は水平 (x 方向) になり、丸い側が上になる。"""
+    m = mesh.copy()
+    m.apply_transform(trimesh.transformations.rotation_matrix(
+        np.pi / 2, [0, 1, 0]))
+    m.apply_translation([0, 0, -m.bounds[0, 2]])
+    return m
+
+
 def flip_frame(mesh):
     """帯フレームを天地逆にする（x 軸まわり 180°、bbox 中心）。"""
     b = mesh.bounds
@@ -440,6 +463,10 @@ def pack(pieces):
             for rot, (w, d) in enumerate(((w0, d0), (d0, w0))):
                 if rot and w0 == d0:
                     continue
+                if rot and "band" in label:
+                    # バンド類は 180° 回転済みの向きを保つ
+                    # （§17.28 の恒常ルール）。pack の 90° 回転はしない。
+                    continue
                 if fx + w > BED or fy + d > BED:
                     continue
                 if w <= fw and d <= fd and \
@@ -523,14 +550,18 @@ def main():
                     DIGIT_DROPPED.append(name)
                     print(f"   digit: DROPPED for {name} "
                           "(no socket-clear flat spot)")
+            if "band" in name:
+                m = rotate_band_180(m)
+                print("   orientation: band rotated 180 deg (§17.28 rule)")
             label = f"{name}#0"
             LABELS[label] = (number, disp,
                              "天面を下に（逆さ）" if is_frame else "底面を下に")
             pieces.append((label, m))
         for i in range(n_plunger):
             label = f"plunger#{i}"
-            LABELS[label] = (None, "小ボタン", "平らな面（キャップ）を下に")
-            pieces.append((label, plungers[0].copy()))
+            LABELS[label] = (None, "小ボタン",
+                             "横倒し（平らな背面を下に）")
+            pieces.append((label, lay_plunger_side(plungers[0])))
         print(f"== {out_name}: {len(pieces)} pieces")
         placed = pack(pieces)
         allm = trimesh.util.concatenate([m for _, m, _ in placed])
@@ -587,15 +618,15 @@ def main():
         ax.set_aspect("equal")
         ax.grid(alpha=0.25)
         ax.set_title(f"{out_name}.stl ({len(placed)} ピース)")
-    fig.suptitle("試作ピースの並び方 v2.4.13"
-                 "（4・6・8 はピースに番号あり、他は無地）",
+    fig.suptitle("試作ピースの並び方 v2.4.14"
+                 "（タクト角フレームだけ。4・8 はピースに番号あり）",
                  fontsize=14)
     fig.text(0.5, 0.008,
-             "番号の浮き彫りは 4・6・8 のピースにだけあります。"
-             "1・2・3・5・7 は無地なので、この図の並びと形で見分けて"
-             "ください。\n"
-             "重ね方: トレイ → バンド → 基板 → フレーム の順。帯フレーム"
-             "（4・8）は天面を下にして印刷します。\n"
+             "今回の試作はフレームのタクト角まわりだけです。"
+             "角フレーム（4・8）は天面を下に、小ボタンは横倒し"
+             "（平らな背面を下に）で印刷します。\n"
+             "当て方: バンドを先に基板へ正しく座らせ、その上から"
+             "角フレームをかぶせて、タクトと穴の合いを見てください。\n"
              "小ボタンは、フレームをかぶせた後からでも、後ろ側の差し込み口へ"
              "横に差し込めます（平らに切れた面を後ろに向ける）。",
              ha="center", fontsize=10.5)
