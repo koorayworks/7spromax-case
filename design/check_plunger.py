@@ -1,26 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-プランジャ（小ボタン、v2.4.5 / §17.19）の検証。
+プランジャ（小ボタン、v2.4.5 / §17.19、v2.4.12 / §17.26）の検証。
 実行: ~/workspace/.venv-cad/bin/python check_plunger.py（ビルド込み）
 
 組立座標で次を数値確認する（両半分・全 6 タクト）:
-  1. フレームの受け: ガイド穴（Ø5.4、z 13.2〜14.1 帯）と座ぐり
-     （Ø9.6、床 14.1）がタクト中心軸上に開いていること。座ぐり床の
-     支持は背面側（x+）に存在すること（内側 x- は天面開口へ破れる
-     ため支持なしが想定内。その旨を出力する）。
+  1. フレームの受け: ガイド穴（Ø5.4）と座ぐり（Ø8.6、床 14.1）が
+     実測中心（TACT_X、§17.26）上に開いていること。背面差し込み口
+     （ガイド帯 幅 5.0／座ぐり帯 幅 8.4）が背面フェイスまで
+     通っていること。座ぐり床の支持と、前面側（−x）の屋根材料が
+     残っていること。
   2. 静止時: プランジャ × フレーム／プレート干渉 0。受け凹みの
-     天井とタクト先端（モデル Ø2、z 10.6〜12.5、先端・径とも推定）
-     の間隔 0.3。
+     天井とタクト先端（モデル Ø2、z 10.6〜12.5）の間隔 0.3。
+     プランジャ形状は plunger.stl 実物（D 字クリップ＋通り溝
+     つき）を組立姿勢に変換して使う。
   3. 押下スイープ: -0.3（先端に接触、干渉 0）／-0.8（作動後、
      干渉 0）／-1.1（ストッパ接触、干渉 0）／-1.3（ストッパが
      食い込み干渉 >0 = スイッチのオーバートラベル予算 0.5 を
      使い切る前にストッパが効くことの証明）。スイッチ先端モデルは
      接触後にプランジャへ追随させて測る（固定すると押下量そのもの
      が食い込みとして出るため）。
-  4. 全押下（-1.1）でもフランジ下面がスイッチ本体（モデル
-     5×4×z[7.3,10.6]、推定）に当たらないこと。
+  4. 全押下（-1.1）でもフランジ下面がスイッチ本体（実測モデル
+     3.4(x)×6.0(y)×z[7.3,10.6]、§17.26）に当たらないこと。
   5. 抜け止め: フランジ Ø7 > ガイド穴 Ø5.4、フランジ天井と
      屋根下面（スロット上面 13.2）の遊び 0.3。
+  6. 差し込みスイープ（v2.4.12 で追加）: プランジャを背面フェイス
+     の外（中心 +8）から組立位置まで水平に差し込む経路で、
+     フレームとの干渉が全行程 0 であること。フレーム単体
+     （静止高さ／落下高さ -1.1）と、フレームを基板に載せた状態
+     （タクト実体＋先端が実在、先端はフランジ下面の通り溝を
+     通る）の両方で確認する。
+     注: 旧設計（閉じた穴）にはこの経路自体が存在せず、本
+     チェックも v2.4.11 までは組立状態しか見ていなかった
+     （§17.26 の発見経緯）。
 """
 import numpy as np
 import trimesh
@@ -40,6 +51,8 @@ CAP_BOT = CAP_TOP - bc.PLUNGER_CAP_T               # 15.2
 SHAFT_BOT = CAP_BOT - bc.PLUNGER_SHAFT_L           # 12.9
 FLANGE_BOT = SHAFT_BOT - bc.PLUNGER_FLANGE_T       # 11.9
 CEIL_Z = FLANGE_BOT + bc.PLUNGER_RECESS_DEPTH      # 12.8
+
+_PLUNGER_RAW = None
 
 
 def load_part(half, key):
@@ -74,12 +87,20 @@ def boxm(x0, x1, y0, y1, z0, z1):
 
 
 def plunger_at(x, y):
-    cap = cylm(x, y, CAP_BOT, CAP_TOP, bc.PLUNGER_CAP_D)
-    shaft = cylm(x, y, SHAFT_BOT, CAP_BOT, bc.PLUNGER_SHAFT_D)
-    flange = cylm(x, y, FLANGE_BOT, SHAFT_BOT, bc.PLUNGER_FLANGE_D)
-    p = trimesh.boolean.union([cap, shaft, flange], engine="manifold")
-    recess = cylm(x, y, FLANGE_BOT - 0.1, CEIL_Z, bc.PLUNGER_RECESS_D)
-    return trimesh.boolean.difference([p, recess], engine="manifold")
+    """plunger.stl 実物（印刷姿勢: キャップ下面が z=0）を組立姿勢・
+    位置に変換する。印刷 +x が組立 +x（背面）になるよう x 軸回転
+    （(x,y,z) -> (x,-y,-z)）で天地を返す。"""
+    global _PLUNGER_RAW
+    if _PLUNGER_RAW is None:
+        m = trimesh.load(f"{bc.OUTDIR}/plunger.stl")
+        if isinstance(m, trimesh.Scene):
+            m = trimesh.util.concatenate(tuple(m.geometry.values()))
+        _PLUNGER_RAW = m
+    p = _PLUNGER_RAW.copy()
+    p.apply_transform(trimesh.transformations.rotation_matrix(
+        np.pi, [1, 0, 0]))
+    p.apply_translation([x, y, CAP_TOP])
+    return p
 
 
 fails = []
@@ -96,24 +117,47 @@ for half in HALVES:
     frame = load_part(half, "frame")
     plate = load_part(half, "plate")
     for ci, c in enumerate(bc.TACT_CENTERS[half]):
-        x = bc.TACT_X
+        x = bc.TACT_X[half]
         print(f"== {half} tact{ci+1} (x={x}, y={c}) ==")
-        # 1. 受けの開口と支持
-        pts = np.array([[x, c, 13.65], [x, c, 15.5],
-                        [x + 5.6, c, 15.0], [x - 5.6, c, 15.0]])
+        # 1. 受けの開口・差し込み口・支持
+        # 差し込み口のプローブは「口が無ければ材料がある」位置に
+        # 置く: 座ぐり円（r4.3）の外・背面フェイスの内側・口の幅
+        # （±4.2）の内側の点、ガイド穴（r2.7）でも同様の点。
+        pts = np.array([
+            [x, c, 13.65],            # ガイド穴（開いていれば外）
+            [x, c, 15.5],             # 座ぐり（開いていれば外）
+            [x + 2.35, c + 3.8, 15.0],  # 座ぐり差し込み口（外）
+            [x + 2.3, c + 2.4, 13.5],   # ガイド差し込み口（外）
+            [x - 5.6, c, 15.0],       # 前面側の屋根材料（あれば内）
+            [x - 3.5, c, 14.05],      # 座ぐり床の支持・前（あれば内）
+            # 座ぐり床の支持・後: ガイド差し込み口（幅 5.0）の
+            # 外側で測る（口の切り代 +0.05 が床上面に被るため、
+            # 中心線上では床が 0.05 低くなる。ストッパの当たりは
+            # 周囲の床で受けるので機能に影響しない）
+            [x + 2.2, c + 3.2, 14.05],
+            # フードの実材（座ぐりの後ろ角、差し込み口の外側）。
+            # v2.4.12 で追加したタクト帯のフードが受けを囲んで
+            # いることの確認（フードが無いと空中になる位置:
+            # ケース外形の窪みの上、座ぐり円と差し込み口の外）
+            [x + 1.85, c + 4.6, 15.0],
+        ])
         ins = frame.contains(pts)
-        print(f"   guide hole open (z13.65): {not ins[0]}, "
-              f"counterbore open (z15.5): {not ins[1]}, "
-              f"floor support +x side: {bool(ins[2])}, "
-              f"-x side (well side, expected open): {bool(ins[3])}")
-        if ins[0] or ins[1] or not ins[2]:
-            fails.append(f"{half} tact{ci+1}: receiver opening/support")
-        # 2-4. 静止と押下スイープ
+        print(f"   guide hole open: {not ins[0]}, counterbore open: {not ins[1]}, "
+              f"cb channel open: {not ins[2]}, guide channel open: {not ins[3]}, "
+              f"front roof material: {bool(ins[4])}, "
+              f"floor support front/back: {bool(ins[5])}/{bool(ins[6])}, "
+              f"roof back corner: {bool(ins[7])}")
+        if ins[0] or ins[1] or ins[2] or ins[3] or not ins[4] \
+                or not ins[5] or not ins[6] or not ins[7]:
+            fails.append(f"{half} tact{ci+1}: receiver opening/channel/support")
+        # 2-4. 静止と押下スイープ（プランジャは STL 実物）
         p0 = plunger_at(x, c)
         tip = cylm(x, c, BODY_TOP, TIP_TOP, TIP_D)
-        body = boxm(x - 2.5, x + 2.5, c - 2.0, c + 2.0, bc.PCB_TOP, BODY_TOP)
-        print(f"   plunger bbox z: [{p0.bounds[0][2]:.2f}, {p0.bounds[1][2]:.2f}] "
-              f"vol={p0.volume:.1f}")
+        body = boxm(x - bc.TACT_W_X / 2, x + bc.TACT_W_X / 2,
+                    c - bc.TACT_W_Y / 2, c + bc.TACT_W_Y / 2,
+                    bc.PCB_TOP, BODY_TOP)
+        print(f"   plunger bbox x[{p0.bounds[0][0]:.2f},{p0.bounds[1][0]:.2f}] "
+              f"z[{p0.bounds[0][2]:.2f},{p0.bounds[1][2]:.2f}] vol={p0.volume:.1f}")
         rows = []
         for dz, label in ((0.0, "rest"), (-0.3, "touch"), (-0.8, "actuated"),
                           (-1.1, "stopper"), (-1.3, "over")):
@@ -138,5 +182,20 @@ for half in HALVES:
         print(f"   -> {'OK' if ok else 'FAIL'}")
         if not ok:
             fails.append(f"{half} tact{ci+1}: stroke sweep")
+        # 6. 差し込みスイープ: 背面の外（+8）から組立位置まで
+        for dz, targets, label in (
+                (0.0, (("frame", frame),), "frame-only rest"),
+                (-1.1, (("frame", frame),), "frame-only dropped"),
+                (0.0, (("frame", frame), ("tip", tip), ("body", body)),
+                 "mounted")):
+            worst = 0.0
+            for dx in np.arange(8.0, -0.01, -0.5):
+                p = p0.copy()
+                p.apply_translation([dx, 0, dz])
+                for _tn, tm in targets:
+                    worst = max(worst, ivol(p, tm))
+            print(f"   insert sweep [{label}]: worst interference {worst:.3f}")
+            if worst >= 0.05:
+                fails.append(f"{half} tact{ci+1}: insert sweep {label}")
 
 print("PLUNGER CHECK " + ("FAILED: " + "; ".join(fails) if fails else "ALL OK"))

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-TRRS 確認ピース（trial_trrs_{tray,band,frame}）の検証（v2.4.11、§17.25）
+TRRS 確認ピースの検証（v2.4.11、§17.25。v2.4.12／§17.26 で
+背面帯ピース trial_back_{tray,band,frame} に追随）
 
 試作ピース単体で実物確認が成立するかを見る:
   1. 各ピースが単一ソリッド・watertight であること。
@@ -23,7 +24,7 @@ from check_trrs import section_polys, blocked, boxm, cylx, ivol
 ZO = {"tray": 0.0, "band": 1.9, "frame": 5.7}
 
 def load_piece(half, key):
-    m = trimesh.load(f"{bc.OUTDIR}/trial_trrs_{key}_{half}.stl")
+    m = trimesh.load(f"{bc.OUTDIR}/trial_back_{key}_{half}.stl")
     if isinstance(m, trimesh.Scene):
         m = trimesh.util.concatenate(tuple(m.geometry.values()))
     m.apply_translation([0, 0, ZO[key]])
@@ -35,7 +36,7 @@ def main():
         parts = {k: load_piece(half, k) for k in ("tray", "band", "frame")}
         for k, m in parts.items():
             n = len(m.split(only_watertight=False))
-            print(f"{half} trial_trrs_{k}: solids={n} watertight={m.is_watertight} "
+            print(f"{half} trial_back_{k}: solids={n} watertight={m.is_watertight} "
                   f"vol={m.volume:.1f}")
             if n != 1 or not m.is_watertight:
                 ok = False
@@ -62,6 +63,12 @@ def main():
             if any(v > 0.01 for v in list(res_p.values()) + list(res_i.values())):
                 ok = False
         # --- 4. 開口幅の走査（ピース断面のみ） ---
+        # v2.4.12 (§17.26): 開口の片側（short は -7 側、long は
+        # +7 側）の壁はバンドの背面リボン（島）で、帯ピースには
+        # 含めていない（実物では範囲外経由でつながる別ソリッド）。
+        # その側の壁は本体チェック（check_trrs）で確認済みのため、
+        # ここでは開口の空きと反対側の壁だけを要求する。
+        ISLAND_DY = {"short": -7.0, "long": 7.0}
         polys = []
         for k in ("tray", "band", "frame"):
             polys += section_polys(parts[k], bc.TRRS_AXIS_Z)
@@ -69,11 +76,14 @@ def main():
         ys_in = np.arange(ty - 5.4, ty + 5.41, 0.3)
         shut = [y for y in ys_in if blocked(polys, xw, y)]
         wall = {dy: blocked(polys, xw, ty + dy) for dy in (-7.0, 7.0)}
-        stat = "OK" if not shut and all(wall.values()) else \
+        need = [dy for dy in (-7.0, 7.0) if dy != ISLAND_DY[half]]
+        stat = "OK" if not shut and all(wall[dy] for dy in need) else \
             f"NG shut={[round(float(s), 1) for s in shut]} wall={wall}"
-        if shut or not all(wall.values()):
+        if shut or not all(wall[dy] for dy in need):
             ok = False
-        print(f"{half} opening width scan on pieces (x={xw:.1f}): {stat}")
+        print(f"{half} opening width scan on pieces (x={xw:.1f}): {stat} "
+              f"(island side dy={ISLAND_DY[half]}: wall in piece="
+              f"{wall[ISLAND_DY[half]]}, full-part check covers it)")
     print("TRRS TRIAL CHECK " + ("OK" if ok else "NG"))
 
 if __name__ == "__main__":

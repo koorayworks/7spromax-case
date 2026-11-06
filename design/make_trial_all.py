@@ -2,25 +2,34 @@
 """試作ピース一式を 180x180 ベッド内に再レイアウトした統合 STL を
 作り直す。
 
-構成（v2.4.11／§17.25）: 全 20 ピースを 2 ファイルに分割する。
-  - trial_all_1.stl: short 系 7 ピース＋プランジャ 3 個（計 10）
-  - trial_all_2.stl: long 系 7 ピース＋プランジャ 3 個（計 10）
-各系の内訳は、階段バンド 1＋角ピース（トレイ／バンド／フレーム）3
-＋TRRS ピース（トレイ／バンド／フレーム）3 ＝ 7。
-スイッチ穴ピース（trial_plate_holes）はパチ留め確認済みのため
-本人の指示で除外した。
+構成（v2.4.12／§17.26）: 全 14 ピースを 2 ファイルに分割する。
+  - trial_all_1.stl: short 系 4 ピース＋プランジャ 3 個（計 7）
+  - trial_all_2.stl: long 系 4 ピース＋プランジャ 3 個（計 7）
+各系の内訳は、階段バンド 1＋背面帯ピース（トレイ／バンド／
+フレーム）3。背面帯は、旧 corner クリップと TRRS クリップを
+やめて、奥辺に沿ってタクトの角から TRRS 帯まで一続きにした
+もの（本人の指示「つなげたやつじゃないとわからん」）。
+バンドだけは背面壁が断片的なため幅いっぱいの切り出し。
 
-分割の理由: 従来の単一 trial_all_v22.stl は ASCII 変換後に
-約 5.68MB となり、GitHub push（push-files）のサイズ上限
-（HTTP 413）に当たったため。各ファイルは ASCII で 4MB 以下を
-目安に、系ごとに分けた（プランジャは 3 個ずつ分散）。
+各ピースには番号を浮き彫りで入れる（本人の指示「試作片が
+パズルすぎて難しい」）。番号はガイド図と一致させる:
+  1=階段バンド(short) 2=帯トレイ(short) 3=帯バンド(short)
+  4=帯フレーム(short) 5=階段バンド(long) 6=帯トレイ(long)
+  7=帯バンド(long) 8=帯フレーム(long)。プランジャは無印。
+
+サポートなし印刷のための向き（§17.26）:
+  - 帯フレームは天地を逆にして並べる（天面をベッド側に付け、
+    キャビティを上向きのポケットにする）。番号は反転後に
+    正しく読める向きで彫る。
+  - 他のピースは従来どおり底面を下にする。
 
 配置は MaxRects（空き矩形のベストフィット分割）で、ピース間隔
 3mm 以上・ベッド内・z=0 着座・watertight を検証してから書き出す。
 """
 import numpy as np
 import trimesh
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
+from shapely.ops import unary_union
 
 BASE = "/home/hatch/workspace/7spromax-case/design"
 BED = 180.0
@@ -28,18 +37,18 @@ BED = 180.0
 # する（検証は実測で 3.0 以上を要求）。
 GAP = 3.05
 
+# (ピース名, 番号, 表示名, フレーム反転するか)
 GROUPS = {
-    "trial_all_1": (["trial_stair_band_short",
-                     "trial_corner_tray_short", "trial_corner_band_short",
-                     "trial_corner_frame_short",
-                     "trial_trrs_tray_short", "trial_trrs_band_short",
-                     "trial_trrs_frame_short"], 3),
-    "trial_all_2": (["trial_stair_band_long",
-                     "trial_corner_tray_long", "trial_corner_band_long",
-                     "trial_corner_frame_long",
-                     "trial_trrs_tray_long", "trial_trrs_band_long",
-                     "trial_trrs_frame_long"], 3),
+    "trial_all_1": ([("trial_stair_band_short", 1, "階段バンド（左）", False),
+                     ("trial_back_tray_short", 2, "帯トレイ（左）", False),
+                     ("trial_back_band_short", 3, "帯バンド（左）", False),
+                     ("trial_back_frame_short", 4, "帯フレーム（左）", True)], 3),
+    "trial_all_2": ([("trial_stair_band_long", 5, "階段バンド（右）", False),
+                     ("trial_back_tray_long", 6, "帯トレイ（右）", False),
+                     ("trial_back_band_long", 7, "帯バンド（右）", False),
+                     ("trial_back_frame_long", 8, "帯フレーム（右）", True)], 3),
 }
+TRRS_Y = {"short": 67.2, "long": 80.3}
 
 
 def load_solids(path):
@@ -65,6 +74,234 @@ def footprint(mesh):
     hull = ConvexHull(pts)
     return Polygon(pts[hull.vertices])
 
+
+# ---------------- 番号の浮き彫り ----------------
+
+def digit_polygons(text, height):
+    """数字の shapely ポリゴン（高さ height にスケール、中心原点）。"""
+    from matplotlib.textpath import TextPath
+    from matplotlib.font_manager import FontProperties
+    tp = TextPath((0, 0), text,
+                  prop=FontProperties(family="DejaVu Sans", weight="bold"),
+                  size=1.0)
+    polys = []
+    for v in tp.to_polygons():
+        if len(v) < 3:
+            continue
+        p = Polygon(v)
+        if p.is_valid and p.area > 1e-6:
+            polys.append(p)
+    # 入れ子（穴）を差し引く
+    result = []
+    for p in sorted(polys, key=lambda q: -q.area):
+        for i, q in enumerate(result):
+            if q.contains(p):
+                result[i] = q.difference(p)
+                break
+        else:
+            result.append(p)
+    u = unary_union(result)
+    minx, miny, maxx, maxy = u.bounds
+    s = height / (maxy - miny)
+    from shapely.affinity import scale as shp_scale, translate as shp_tr
+    u = shp_scale(u, xfact=s, yfact=s, origin=(0, 0))
+    minx, miny, maxx, maxy = u.bounds
+    u = shp_tr(u, xoff=-(minx + maxx) / 2, yoff=-(miny + maxy) / 2)
+    if isinstance(u, Polygon):
+        u = MultiPolygon([u])
+    return u
+
+
+def digit_mesh(text, height, depth=0.6):
+    """数字のソリッド。ローカル座標: u=x, v=y,  extrude +z (0..depth)。"""
+    parts = []
+    for p in digit_polygons(text, height).geoms:
+        parts.append(trimesh.creation.extrude_polygon(p, depth))
+    m = trimesh.util.concatenate(parts)
+    return m
+
+
+def emboss(mesh, text, height, origin, u, v, n, depth=0.6, embed=0.1):
+    """origin（面上の中心）から u/v 方向に数字を置き、n 方向へ
+    depth 浮き出させる（根元 embed だけ埋め込む）。"""
+    d = digit_mesh(text, height, depth)
+    M = np.eye(4)
+    M[:3, 0] = u
+    M[:3, 1] = v
+    M[:3, 2] = n
+    M[:3, 3] = np.asarray(origin, float) - embed * np.asarray(n, float)
+    d.apply_transform(M)
+    out = trimesh.boolean.union([mesh, d], engine="manifold")
+    if isinstance(out, trimesh.Scene):
+        out = trimesh.util.concatenate(tuple(out.geometry.values()))
+    dv = d.volume * (depth - embed) / depth
+    gain = out.volume - mesh.volume
+    solids = out.split(only_watertight=False)
+    ok = (out.is_watertight and len(solids) == 1
+          and 0.3 * dv < gain < 1.1 * dv)
+    print(f"    emboss '{text}' h={height}: gain={gain:.1f} "
+          f"(expect ~{dv:.1f}) solids={len(solids)} -> {'OK' if ok else 'NG'}")
+    return out, ok
+
+
+def top_z(mesh, pts):
+    """各 (x, y) の上面 z（ヒットしなければ nan）。"""
+    origins = np.column_stack([pts[:, 0], pts[:, 1],
+                               np.full(len(pts), 200.0)])
+    dirs = np.tile([0.0, 0.0, -1.0], (len(pts), 1))
+    locs, idx, _ = mesh.ray.intersects_location(
+        origins, dirs, multiple_hits=False)
+    out = np.full(len(pts), np.nan)
+    if len(idx):
+        zz = {}
+        for L, i in zip(locs, idx):
+            zz.setdefault(i, []).append(L[2])
+        for i, v in zz.items():
+            out[i] = max(v)
+    return out
+
+
+def try_top_digit(mesh, text, z_target, tol=0.05, height=4.0,
+                  preferred=None):
+    """上面の平らな場所を探して数字を置く。成功したら mesh を返す。"""
+    polys = digit_polygons(text, height)
+    offs = []
+    for p in polys.geoms:
+        offs.extend(np.asarray(p.exterior.coords))
+        offs.append(np.asarray(p.centroid.coords)[0])
+    offs = np.array(offs)
+    hw = max(abs(offs[:, 0].max()), abs(offs[:, 0].min())) + 1.2
+    hh = max(abs(offs[:, 1].max()), abs(offs[:, 1].min())) + 1.2
+    b = mesh.bounds
+    cand = []
+    xs = np.arange(b[0, 0] + hw, b[1, 0] - hw + 1e-9, 2.0)
+    ys = np.arange(b[0, 1] + hh, b[1, 1] - hh + 1e-9, 2.0)
+    for cx in xs:
+        for cy in ys:
+            d = 0.0 if preferred is None else \
+                (cx - preferred[0]) ** 2 + (cy - preferred[1]) ** 2
+            cand.append((d, cx, cy))
+    cand.sort()
+    for _, cx, cy in cand:
+        pts = offs + np.array([cx, cy])
+        tz = top_z(mesh, pts)
+        if np.isnan(tz).any():
+            continue
+        if abs(tz - z_target).max() <= tol:
+            out, ok = emboss(mesh, text, height, (cx, cy, z_target),
+                             (-0.0, -1.0, 0.0), (1.0, 0.0, 0.0),
+                             (0.0, 0.0, 1.0))
+            if ok:
+                return out
+    return None
+
+
+def try_face_digit(mesh, text, axis, side, v_center, height,
+                   basis_override=None):
+    """垂直面（axis 方向の bbox 端面）に数字を置く。
+    axis: 0=x, 1=y。side: 0=min 側, 1=max 側。"""
+    b = mesh.bounds
+    plane = b[side, axis]
+    n = np.zeros(3)
+    n[axis] = 1.0 if side == 1 else -1.0
+    other = 1 - axis
+    # 面に沿って材料の連続区間を探す（v_center の高さで内側 0.3）
+    scan = np.arange(b[0, other] + 0.5, b[1, other] - 0.4, 0.5)
+    pts = np.zeros((len(scan), 3))
+    pts[:, axis] = plane - n[axis] * 0.3
+    pts[:, other] = scan
+    pts[:, 2] = v_center
+    ins = mesh.contains(pts)
+    # 連続 run
+    runs, s0 = [], None
+    for i, v in enumerate(ins):
+        if v and s0 is None:
+            s0 = i
+        if (not v or i == len(ins) - 1) and s0 is not None:
+            e0 = i - 1 if not v else i
+            runs.append((scan[s0], scan[e0]))
+            s0 = None
+    polys = digit_polygons(text, height)
+    dw = polys.bounds[2] - polys.bounds[0]
+    runs = [r for r in runs if r[1] - r[0] >= dw + 1.5]
+    if not runs:
+        return None
+    runs.sort(key=lambda r: -(r[1] - r[0]))
+    center_along = (runs[0][0] + runs[0][1]) / 2
+    # 面の平らさ検証: 数字の範囲で内側 0.3 が材料、外側 0.12 が空
+    offs = []
+    for p in polys.geoms:
+        offs.extend(np.asarray(p.exterior.coords))
+    offs = np.array(offs)
+    if basis_override is not None:
+        u, v = basis_override
+    else:
+        u = np.cross(-n, np.array([0.0, 0.0, 1.0]))
+        v = np.array([0.0, 0.0, 1.0])
+    origin = np.zeros(3)
+    origin[axis] = plane
+    origin[other] = center_along
+    origin[2] = v_center
+    pts3 = origin + offs[:, 0:1] * u + offs[:, 1:2] * v
+    f_in = mesh.contains(pts3 - 0.3 * n).mean()
+    f_out = (~mesh.contains(pts3 + 0.12 * n)).mean()
+    print(f"    face digit check: inside={f_in:.2f} outside={f_out:.2f}")
+    if f_in < 0.95 or f_out < 0.8:
+        return None
+    out, ok = emboss(mesh, text, height, origin, u, v, n)
+    return out if ok else None
+
+
+def flip_frame(mesh):
+    """帯フレームを天地逆にする（x 軸まわり 180°、bbox 中心）。"""
+    b = mesh.bounds
+    cy, cz = (b[0, 1] + b[1, 1]) / 2, (b[0, 2] + b[1, 2]) / 2
+    m = mesh.copy()
+    m.apply_translation([0, -cy, -cz])
+    m.apply_transform(trimesh.transformations.rotation_matrix(
+        np.pi, [1, 0, 0]))
+    m.apply_translation([0, cy, cz])
+    m.apply_translation([0, 0, -m.bounds[0, 2]])
+    return m
+
+
+def emboss_piece(name, mesh, number):
+    """ピース種別ごとの方針で番号を入れる。"""
+    text = str(number)
+    half = "short" if name.endswith("_short") else "long"
+    if "tray" in name:
+        out = try_top_digit(mesh, text, 2.5,
+                            preferred=(95.0, TRRS_Y[half] + 30.0))
+        assert out is not None, f"{name}: tray digit placement failed"
+        return out
+    if "band" in name:
+        out = try_top_digit(mesh, text, 3.8)
+        if out is not None:
+            return out
+        # 端面（外側の端壁）に 3.2mm で入れる
+        if "stair" in name:
+            side = 0 if half == "short" else 1
+        else:
+            side = 1 if half == "short" else 0
+        out = try_face_digit(mesh, text, axis=1, side=side,
+                             v_center=1.9, height=3.2)
+        assert out is not None, f"{name}: band digit placement failed"
+        return out
+    if "frame" in name:
+        # 端面に、反転後正しく読める向き（v=-z、u は反転後の
+        # 視点の右方向を逆算）で彫ってから反転する
+        side = 1 if half == "short" else 0
+        u_pre = np.array([1.0, 0.0, 0.0]) if half == "short" \
+            else np.array([-1.0, 0.0, 0.0])
+        out = try_face_digit(
+            mesh, text, axis=1, side=side, v_center=5.2, height=4.0,
+            basis_override=(u_pre, np.array([0.0, 0.0, -1.0])))
+        assert out is not None, f"{name}: frame digit placement failed"
+        return flip_frame(out)
+    raise ValueError(name)
+
+
+# ---------------- パッキング（従来どおり MaxRects） ----------------
 
 def pack(pieces):
     """MaxRects で配置し、[(label, mesh, footprint)] を返す。"""
@@ -140,17 +377,28 @@ def pack(pieces):
     return placed
 
 
+LABELS = {}   # label -> (番号 or None, 表示名, 下にする面の説明)
+
+
 def main():
     plungers = load_solids(f"{BASE}/plunger.stl")
     assert len(plungers) == 1, f"plunger.stl solids: {len(plungers)}"
     all_placed = {}
-    for out_name, (files, n_plunger) in GROUPS.items():
+    for out_name, (specs, n_plunger) in GROUPS.items():
         pieces = []
-        for name in files:
-            for i, s in enumerate(load_solids(f"{BASE}/{name}.stl")):
-                pieces.append((f"{name}#{i}", s))
+        for name, number, disp, is_frame in specs:
+            solids = load_solids(f"{BASE}/{name}.stl")
+            assert len(solids) == 1, f"{name}: solids={len(solids)}"
+            print(f"== {name} (#{number}) ==")
+            m = emboss_piece(name, solids[0], number)
+            label = f"{name}#0"
+            LABELS[label] = (number, disp,
+                             "天面を下に（逆さ）" if is_frame else "底面を下に")
+            pieces.append((label, m))
         for i in range(n_plunger):
-            pieces.append((f"plunger#{i}", plungers[0].copy()))
+            label = f"plunger#{i}"
+            LABELS[label] = (None, "小ボタン", "平らな面（キャップ）を下に")
+            pieces.append((label, plungers[0].copy()))
         print(f"== {out_name}: {len(pieces)} pieces")
         placed = pack(pieces)
         allm = trimesh.util.concatenate([m for _, m, _ in placed])
@@ -165,26 +413,57 @@ def main():
         import os
         print(f"saved {path} ({os.path.getsize(path)} bytes)")
         all_placed[out_name] = placed
-    # ガイド図: 2 ファイル分の配置を並べて描く
+    # ガイド図: 2 ファイル分の配置を並べて描く（番号を大きく）
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 2, figsize=(15, 7.5))
+    for f in ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+              "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"):
+        try:
+            matplotlib.font_manager.fontManager.addfont(f)
+        except Exception:
+            pass
+    plt.rcParams["font.family"] = "Noto Sans CJK JP"
+    fig, axes = plt.subplots(1, 2, figsize=(15, 8.2))
     for ax, (out_name, placed) in zip(axes, all_placed.items()):
+        plunger_pts = []
         for label, m, fp in placed:
             xs, ys = np.array(fp.exterior.coords).T
-            ax.plot(xs, ys, lw=0.9)
-            c = fp.centroid
-            ax.text(c.x, c.y, label.replace("_", "\n").replace("#", " #"),
-                    ha="center", va="center", fontsize=6)
+            ax.plot(xs, ys, lw=1.1)
+            number, disp, bottom = LABELS[label]
+            rp = fp.representative_point()
+            if number is not None:
+                ax.text(rp.x, rp.y + 7, str(number), ha="center",
+                        va="center", fontsize=30, fontweight="bold",
+                        color="#C0272D")
+                ax.text(rp.x, rp.y - 6, disp, ha="center", va="center",
+                        fontsize=10.5)
+                ax.text(rp.x, rp.y - 13, bottom, ha="center", va="center",
+                        fontsize=8.5, color="#245A9E")
+            else:
+                plunger_pts.append((rp.x, rp.y))
+        if plunger_pts:
+            px = sum(p[0] for p in plunger_pts) / len(plunger_pts)
+            py = sum(p[1] for p in plunger_pts) / len(plunger_pts)
+            ax.annotate(f"小ボタン ×{len(plunger_pts)}", xy=(px, py),
+                        xytext=(px + 26, py - 16), fontsize=10.5,
+                        ha="center", va="center",
+                        arrowprops=dict(arrowstyle="->", lw=1.4,
+                                        color="#333333"))
         ax.set_xlim(0, BED)
         ax.set_ylim(0, BED)
         ax.set_aspect("equal")
         ax.grid(alpha=0.25)
-        ax.set_title(f"{out_name}.stl ({len(placed)} pieces)")
-    fig.suptitle("trial_all layout (v2.4.11: split into 2 files, "
-                 "20 pieces total, no plate-holes piece)")
-    fig.tight_layout()
+        ax.set_title(f"{out_name}.stl ({len(placed)} ピース)")
+    fig.suptitle("試作ピースの並び方 v2.4.12（番号はピースに彫ってあります）",
+                 fontsize=14)
+    fig.text(0.5, 0.015,
+             "重ね方: トレイ → バンド → 基板 → フレーム の順。帯フレーム"
+             "（4・8）は天面を下にして印刷します。\n"
+             "小ボタンは、フレームをかぶせた後からでも、後ろ側の差し込み口へ"
+             "横に差し込めます（平らに切れた面を後ろに向ける）。",
+             ha="center", fontsize=10.5)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     fig.savefig(f"{BASE}/guide_trial_all_v22.png", dpi=110)
     print("saved guide_trial_all_v22.png")
 
