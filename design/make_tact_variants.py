@@ -13,14 +13,22 @@ short のフレームタクト角ピースを、ずらし量のグリッドで
   1 行目 "Y<量>"、2 行目 "X<量>"。端面は当て面でもベッド面
   でもない（§17.27 で浮き彫り残置が OK だったのと同じ面）。
   彫り込みはフレームを天地逆に印刷する前の向き（組立向き）
-  で入れるため、印刷後にピースを基板へ当てる向きに戻せば
-  そのまま読める。
+  で入れる。
+
+  §17.30 (v2.4.15) で鏡像を修正: §17.28 の彫りは、組立向きで
+  端面を外から見ると左右反転していた（§17.29 でラスタ実測
+  により判明、印刷前で実害なし）。long 版 (§17.29) と同じ
+  方式で、文字ポリゴンを左右反転してから determinant が正の
+  回転で配置し、外から正しく読めるようにした。再生成後の
+  ラスタ確認でも正像を確認済み。
 
 ピース単体 STL（trial_tact_frame_short_s*.stl）は build_case
 を環境変数 TACT_VARIANT_STEP / TACT_VARIANT_DX で回して作る。
 """
 import numpy as np
 import trimesh
+from shapely.affinity import scale as _shp_scale
+from shapely.ops import orient as _shp_orient
 
 import make_trial_all as mt
 
@@ -37,17 +45,23 @@ DEPTH = 0.5      # 彫り込み深さ
 
 def text_cutter(text, cx, cz, ymax):
     """端面（y=ymax の垂直面）に文字を彫るためのカッター。
-    ローカル (a=面に沿う x, b=上向き z) の文字ポリゴンを、
-    面の外側 (+y) から DEPTH+0.15 だけ差し込むソリッドにする。"""
+    ローカル (a=面に沿う x, b=上向き z) の文字ポリゴンを左右
+    反転してから、面の外側 (+y) から DEPTH+0.15 だけ差し込む
+    ソリッドにする。変換は回転（det=+1）: a -> +x（ポリゴン
+    反転と相殺し、端面を +y の外側から見て正しく読める）、
+    b -> +z、押し出し方向 -> -y（面の内側へ）。
+    §17.29 の long 版と同じ方式（§17.30 で移植）。"""
     polys = mt.digit_polygons(text, TEXT_H)
     w = polys.bounds[2] - polys.bounds[0]
     assert w < 13.5, f"text '{text}' too wide: {w:.1f}mm"
     parts = []
     for p in polys.geoms:
-        parts.append(trimesh.creation.extrude_polygon(p, DEPTH + 0.15))
+        pm = _shp_orient(_shp_scale(p, xfact=-1.0, origin=(0, 0)),
+                          sign=1.0)
+        parts.append(trimesh.creation.extrude_polygon(pm, DEPTH + 0.15))
     m = trimesh.util.concatenate(parts)
     M = np.eye(4)
-    M[:3, 0] = [1, 0, 0]      # a -> +x
+    M[:3, 0] = [1, 0, 0]      # a -> +x（ポリゴン反転と相殺）
     M[:3, 1] = [0, 0, 1]      # b -> +z
     M[:3, 2] = [0, -1, 0]     # extrude dir -> -y (面の内側へ)
     M[:3, 3] = [cx, ymax + 0.15, cz]

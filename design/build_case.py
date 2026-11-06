@@ -184,20 +184,30 @@ TACT_CENTERS   = {      # タクト中心 y（ケース座標）
     "short": [111.4, 120.9, 130.4],
     "long":  [15.0, 24.5, 34.0],
 }
-# 試作バリエーション（§17.28）: 環境変数 TACT_VARIANT_STEP
-# （例 1.5）を渡すと、short の中心を v2.4.13 値＋STEP に差し替え、
-# 角ピースだけを trial_tact_frame_short_s<STEPx10>.stl に書き出す。
+# 試作バリエーション（§17.28 で short 用に導入、§17.29 で
+# long へ一般化）: 環境変数 TACT_VARIANT_STEP（例 1.5）を渡すと、
+# 対象ハーフ（TACT_VARIANT_HALF、既定 "short"）の中心を基準中心
+# ＋STEP に差し替え、角ピースだけを書き出す。基準中心は §17.18 の
+# 導出値で、short は [109.5, 119.0, 128.5]（production は §17.28 で
+# +1.9 是正済みの別値）、long は [15.0, 24.5, 34.0]（= 現行
+# production 値そのもの）。ファイル名は TACT_VARIANT_TAG があれば
+# trial_tact_frame_<half>_<TAG>.stl、なければ従来どおり
+# trial_tact_frame_<half>_s<STEPx10>[_x<DXx10>].stl。
 import os as _os
 _VARIANT_STEP = _os.environ.get("TACT_VARIANT_STEP")
 _VARIANT_DX = _os.environ.get("TACT_VARIANT_DX")
+_VARIANT_HALF = _os.environ.get("TACT_VARIANT_HALF", "short")
+_VARIANT_TAG = _os.environ.get("TACT_VARIANT_TAG")
+_VARIANT_BASE = {"short": [109.5, 119.0, 128.5],
+                 "long": [15.0, 24.5, 34.0]}
 if _VARIANT_STEP:
     _step = float(_VARIANT_STEP)
-    TACT_CENTERS["short"] = [109.5 + _step, 119.0 + _step,
-                             128.5 + _step]
-    print(f"[variant] short tact centers shifted +{_step}: "
-          f"{TACT_CENTERS['short']}")
+    TACT_CENTERS[_VARIANT_HALF] = [
+        c + _step for c in _VARIANT_BASE[_VARIANT_HALF]]
+    print(f"[variant] {_VARIANT_HALF} tact centers shifted "
+          f"{_step:+}: {TACT_CENTERS[_VARIANT_HALF]}")
 if _VARIANT_DX:
-    print(f"[variant] short TACT_X delta {_VARIANT_DX} "
+    print(f"[variant] {_VARIANT_HALF} TACT_X delta {_VARIANT_DX} "
           "(applied after TACT_X definition)")
 # パドル窓（トレイ／バンド）とネジ計画の除外帯は v2.4.13 までの
 # 中心で確定済みとし、§17.28 の中心是正では動かさない。窓は
@@ -255,9 +265,10 @@ TACT_EDGE_IN     = 2.2    # 背面フチ → タクト中心（= 0.5 + 3.4/2）
 TACT_BACK_X      = {"short": 113.77, "long": 113.24}  # 背面プレーン
 TACT_X           = {h: TACT_BACK_X[h] - TACT_EDGE_IN
                     for h in ("short", "long")}       # 111.57 / 111.04
-if _VARIANT_DX:   # 試作グリッド用（§17.28）: short の奥行きをずらす
-    TACT_X["short"] += float(_VARIANT_DX)
-    print(f"[variant] short TACT_X -> {TACT_X['short']:.2f}")
+if _VARIANT_DX:   # 試作グリッド用（§17.28/§17.29）: 対象ハーフの奥行きをずらす
+    TACT_X[_VARIANT_HALF] += float(_VARIANT_DX)
+    print(f"[variant] TACT_X {_VARIANT_HALF} -> "
+          f"{TACT_X[_VARIANT_HALF]:.2f}")
 TACT_W_X         = 3.4    # タクト実体の奥行き x（実測、§17.26）
 TACT_W_Y         = 6.0    # タクト実体の幅 y（実測、§17.20 で確定済み）
 # フレーム側の受け（タクト中心に同軸）:
@@ -460,11 +471,13 @@ TRRS_AXIS_Z   = 3.0     # 軸 z 推定（ケース座標、±0.4）
 # 開口・逃げの寸法: ジャック本体幅は写真 7466 の画素計測で約 6mm
 # （基板面スケール換算）。プラグ胴体 Ø6.5 級が軸 z ±0.4 の振れ
 # でも当たらないよう、開口は裏面側の全帯域（トレイ床貫通〜基板
-# 裏面）を背面壁に開け、フレーム下端にも 1.2 の逃げを入れる。
+# 裏面）を背面壁に開ける。フレームの背面壁は v2.4.15 (§17.30)
+# から、この開口幅の区間（タブ区間）には全高で作らない。
 TRRS_OPEN_W   = 11.0    # 開口・逃げの y 幅（本体約6＋プラグØ6.5 に両側 2.25 余裕）
 TRRS_CUT_X0   = 100.0   # 逃げの内側端 x（背面フェイス 114.3 から 14.3mm。
                         # ジャック本体＋ピンの内側端の想定最大 ~10mm に余裕）
-TRRS_FRAME_Z1 = PCB_BOT + 1.2   # 6.9: フレーム下端の逃げ上端（プラグ胴体用）
+TRRS_FRAME_Z1 = PCB_BOT + 1.2   # 6.9: 旧フレーム下端逃げの上端。
+                        # v2.4.15 で全高取り除きに置換され未使用（記録として残置）
 
 # --- アンダーグロー（v2.1 で側面バンドへ統合・廃止） ---
 # v1〜v2 の「壁を薄くする帯」は、v2.1 で独立パーツの側面バンド（白）に
@@ -1490,14 +1503,25 @@ def build_half(half):
     # カットはトレイ／バンド構築側で行う。
     # v2.4.8 (§17.22): 旧 TRRS 開口（背面壁 z 7.75〜13.15）は廃止
     # （ジャックは裏面実装で本体は基板の下にあり、開口はトレイ＋
-    # バンド側に新設する。旧開口は壁に戻る）。フレーム側に残すのは
-    # プラグ胴体の逃げだけ: 胴体（Ø6.5 級、軸 z≈3.0±0.4）の上端は
-    # 最大 z≈6.65 に達する一方、タブ部のフレーム下帯は背面壁の膜
-    # （0〜0.5mm 級）しか残らないため、帯域ごと z 6.9 まで取り除く
-    # （膜状区間の解消も兼ねる）。
+    # バンド側に新設する。旧開口は壁に戻る）。
+    # v2.4.15 (§17.30): 前提訂正。本人明言「壁は TRRS の手前で
+    # 終わってる」に従い、フレームの背面壁は TRRS タブ区間には
+    # 作らない: タブ区間（TRRS 中心 ±TRRS_OPEN_W/2 = ±5.5、
+    # トレイ床スロット・バンド全高開口と同一区間）では背面壁を
+    # x >= TRRS_CUT_X0 から全高で取り除き、壁はタブ区間の手前で
+    # 終わる（タクト側の端面: short y 72.7 / long y 74.8）。
+    # 区間の根拠: ジャック本体包絡 ±3.25・プラグ胴体 Ø6.5
+    # （±3.25）に両側 2.25 の余裕を見た既存開口幅と同一。
+    # v2.4.8 の下帯だけのプラグ逃げ（z 6.9 まで）は、この
+    # 取り除きに含まれるため廃止する。
+    # 島セグメント（short 72.7〜104.1 / long 39.4〜74.8）の
+    # フレーム壁は残す: 同区間は完成形でもトレイ付属の壁
+    # （z 〜5.7）が背面を担う区間で、バンド側の開口拡張は
+    # 1 ソリッド維持のための処置（壁形状はトレイ側に保存）
+    # であり、「壁なし区間」ではない。
     frame = frame - box(TRRS_CUT_X0, xmax + 1,
                         trrs_y - TRRS_OPEN_W / 2, trrs_y + TRRS_OPEN_W / 2,
-                        PCB_BOT - 0.1, TRRS_FRAME_Z1)
+                        PCB_BOT - 0.1, FRAME_TOP + 0.3)
     # v2.4.6 (§17.20): L21 逃げノッチ（long のみ）。階段最上段の角
     # スイッチ L21 の占有域（14.0 角）がフレーム下帯内壁を 2.42mm
     # 突き破るため、14.3 角相当の箱で z 5.7〜11.0（下帯＋プレート帯）
@@ -1782,7 +1806,8 @@ def normalize(part, name):
     return fuse_solids(kept)
 
 def export(part, name):
-    if _VARIANT_STEP and not name.startswith("trial_tact_frame_short"):
+    if _VARIANT_STEP and not name.startswith(
+            f"trial_tact_frame_{_VARIANT_HALF}"):
         return f"{OUTDIR}/{name}.stl (skipped in variant mode)"
     fused = normalize(part, name)
     ns = len(fused.solids())
@@ -1902,7 +1927,22 @@ for half, yr in (("short", (TRRS_Y["short"] - 13.0, 146.4)),
                  ("long", (-3, TRRS_Y["long"] + 13.0))):
     P = results[half]
     for pname in ("tray", "frame"):
-        export(clip(P[pname], (80, 117.3), yr), f"trial_back_{pname}_{half}")
+        _c = clip(P[pname], (80, 117.3), yr)
+        if pname == "frame":
+            # v2.4.15 (§17.30): TRRS タブ区間の背面壁を全高で
+            # 取り除いたため、帯クリップ内ではタブ区間より
+            # 階段側の壁セグメント（short y 54.2〜61.7 /
+            # long y 85.8〜93.3）が島になる（本体では前面側を
+            # 回って連続）。バンドのリボン島と同じ扱いで最大の
+            # ソリッドだけを残す: 帯フレームは壁の終わる位置
+            # （short y 72.7 / long y 74.8）までの 1 ピースになる。
+            _solids = _c.solids()
+            if len(_solids) > 1:
+                _c = max(_solids, key=lambda s: s.volume)
+                print(f"[trial] trial_back_frame_{half}: kept largest of "
+                      f"{len(_solids)} solids (wall segment beyond TRRS "
+                      f"opening dropped)")
+        export(_c, f"trial_back_{pname}_{half}")
     # バンドだけは幅いっぱいに切り出す: バンドの背面壁は断片的
     # でしか存在せず（背面の壁は区間によりトレイ側が担う、
     # §17.22 の島セグメントと同じ事情）、背面帯だけの切り出し
@@ -1930,10 +1970,14 @@ for half, yr in (("short", (TRRS_Y["short"] - 13.0, 146.4)),
 #    このピースには存在しない。
 for half, yr in (("short", (100.0, 146.4)), ("long", (-3.0, 43.0))):
     if _VARIANT_STEP:
-        if half == "short":
-            _vn = f"trial_tact_frame_short_s{int(float(_VARIANT_STEP) * 10)}"
-            if _VARIANT_DX:
-                _vn += f"_x{int(abs(float(_VARIANT_DX)) * 10)}"
+        if half == _VARIANT_HALF:
+            if _VARIANT_TAG:
+                _vn = f"trial_tact_frame_{half}_{_VARIANT_TAG}"
+            else:
+                _vn = (f"trial_tact_frame_{half}"
+                       f"_s{int(float(_VARIANT_STEP) * 10)}")
+                if _VARIANT_DX:
+                    _vn += f"_x{int(abs(float(_VARIANT_DX)) * 10)}"
             export(clip(results[half]["frame"], (80, 117.3), yr), _vn)
         continue
     export(clip(results[half]["frame"], (80, 117.3), yr),

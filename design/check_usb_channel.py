@@ -22,8 +22,12 @@ USB 開口チャネルと MCU ポケットのチェック（v2.4.4、§17.18）
      トレイ／バンド／フレームと干渉しないこと。
   4. TRRS チャネル: v2.4.8 (§17.22) で裏面実装に是正。新しい
      低いチャネル（トレイ＋バンド背面壁、軸 z≈3.0±0.4）が貫通して
-     いることと、フレームの旧開口（z 7.75〜13.15）が壁に戻って
-     いることを確認する。ジャック実体との干渉は check_trrs.py。
+     いることを確認する。フレーム側は v2.4.15 (§17.30) の前提
+     訂正で、背面壁は TRRS タブ区間（中心 ±5.5）に全高で作らない
+     ことになったため、区間内が z=10.45 でも開いていることと、
+     区間のすぐ外側で壁が残っていることを確認する（旧版の
+     「旧開口が壁に戻っていること」は前提訂正で置き換え）。
+     ジャック実体との干渉は check_trrs.py。
 
 実行: ~/workspace/.venv-cad/bin/python check_usb_channel.py
 """
@@ -146,16 +150,28 @@ def main():
             if hits_t:
                 ok = False
             print(f"{half} TRRS low channel (y={ty}, z={zt:.1f}): {stat_t}")
-        # 4b. フレーム旧開口の閉塞: 旧中心 z=10.45 の背面壁帯域
-        # （外面から 1.5mm）が全て材料であること。
+        # 4b. §17.30 (v2.4.15) 前提訂正: フレーム背面壁は TRRS
+        # タブ区間（中心 ±5.5）には全高で作らない。
+        # (i) 区間内は z=10.45 でも背面壁帯域が開いていること。
         polys_old_t = section_polys(parts["frame"], 10.45)
         xs_old = np.arange(ob[2] - 1.5, ob[2] - 0.01, 0.25)
-        gaps_t = [x for x in xs_old if not blocked(polys_old_t, x, ty)]
-        stat_o = "OK (filled)" if not gaps_t else \
-            f"NG still open at x={[round(float(g), 2) for g in gaps_t]}"
-        if gaps_t:
+        remains = [(round(float(x), 2), dy)
+                   for dy in (-5.0, -2.5, 0.0, 2.5, 5.0)
+                   for x in xs_old if blocked(polys_old_t, x, ty + dy)]
+        stat_o = "OK (open)" if not remains else \
+            f"NG wall remains at {remains}"
+        if remains:
             ok = False
-        print(f"{half} frame old TRRS opening (z=10.45): {stat_o}")
+        print(f"{half} frame TRRS tab zone (z=10.45, |dy|<=5.0): {stat_o}")
+        # (ii) 区間のすぐ外側（|dy|=6.5）では背面壁が残っていること。
+        missing = [(round(float(x), 2), dy)
+                   for dy in (-6.5, 6.5)
+                   for x in xs_old if not blocked(polys_old_t, x, ty + dy)]
+        stat_w = "OK (filled)" if not missing else \
+            f"NG wall missing at {missing}"
+        if missing:
+            ok = False
+        print(f"{half} frame wall outside tab zone (z=10.45, |dy|=6.5): {stat_w}")
     print("CHANNEL CHECK " + ("OK" if ok else "NG"))
 
 if __name__ == "__main__":
